@@ -21,12 +21,18 @@ var ErrServiceNameRequired = errors.New("metrics: service name is required")
 
 // Config holds metrics-specific configuration.
 type Config struct {
-	ServiceName        string
-	ServiceVersion     string
-	Environment        string
+	// ServiceName is the logical name of the service. Required.
+	ServiceName string
+	// ServiceVersion is the version string of the service (e.g. "1.2.3"). Optional.
+	ServiceVersion string
+	// Environment identifies the deployment environment (e.g. "prod", "staging"). Optional.
+	Environment string
+	// ResourceAttributes are additional OTel resource attributes merged into the resource. Optional.
 	ResourceAttributes []attribute.KeyValue
-	Exporter           sdkmetric.Exporter
-	// Interval controls how often metrics are exported. Zero uses the SDK default.
+	// Exporter is the metric exporter for the periodic reader.
+	// When nil, a no-op MeterProvider is used and all measurements are discarded.
+	Exporter sdkmetric.Exporter
+	// Interval controls how often metrics are exported. Zero or negative uses the SDK default (60 s).
 	Interval time.Duration
 }
 

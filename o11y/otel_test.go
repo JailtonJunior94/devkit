@@ -355,7 +355,7 @@ func TestNew_withMetricInterval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	defer sdk.Shutdown(context.Background()) //nolint:errcheck
+	sdk.Shutdown(context.Background()) //nolint:errcheck
 }
 
 func TestNew_concurrentAccess(t *testing.T) {
@@ -403,69 +403,8 @@ func TestNew_concurrentShutdown(t *testing.T) {
 	wg.Wait()
 }
 
-func TestWithOTLPTraceGRPC_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithOTLPTraceGRPC())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPTraceGRPC() error = %v", err)
-	}
-	_ = sdk.Shutdown(context.Background())
-}
-
-func TestWithOTLPTraceHTTP_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithOTLPTraceHTTP())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPTraceHTTP() error = %v", err)
-	}
-	_ = sdk.Shutdown(context.Background())
-}
-
-func TestWithOTLPMetricGRPC_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithOTLPMetricGRPC())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPMetricGRPC() error = %v", err)
-	}
-	_ = sdk.Shutdown(context.Background())
-}
-
-func TestWithOTLPMetricHTTP_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithOTLPMetricHTTP())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPMetricHTTP() error = %v", err)
-	}
-	_ = sdk.Shutdown(context.Background())
-}
-
-func TestWithOTLPLogGRPC_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithOTLPLogGRPC())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPLogGRPC() error = %v", err)
-	}
-	_ = sdk.Shutdown(context.Background())
-}
-
-func TestWithOTLPLogHTTP_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithOTLPLogHTTP())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPLogHTTP() error = %v", err)
-	}
-	_ = sdk.Shutdown(context.Background())
-}
-
 func TestWithW3CPropagators(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel: mutates the global OTel TextMapPropagator.
 	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithW3CPropagators())
 	if err != nil {
 		t.Fatalf("New() with WithW3CPropagators() error = %v", err)

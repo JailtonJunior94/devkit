@@ -20,12 +20,19 @@ var ErrServiceNameRequired = errors.New("tracing: service name is required")
 
 // Config holds tracing-specific configuration.
 type Config struct {
-	ServiceName        string
-	ServiceVersion     string
-	Environment        string
+	// ServiceName is the logical name of the service. Required.
+	ServiceName string
+	// ServiceVersion is the version string of the service (e.g. "1.2.3"). Optional.
+	ServiceVersion string
+	// Environment identifies the deployment environment (e.g. "prod", "staging"). Optional.
+	Environment string
+	// ResourceAttributes are additional OTel resource attributes merged into the resource. Optional.
 	ResourceAttributes []attribute.KeyValue
-	SpanExporter       sdktrace.SpanExporter
-	Sampler            sdktrace.Sampler
+	// SpanExporter is the exporter for completed spans.
+	// When nil, a no-op TracerProvider is used and all spans are discarded.
+	SpanExporter sdktrace.SpanExporter
+	// Sampler overrides the default sampler (ParentBased(AlwaysSample)). Optional.
+	Sampler sdktrace.Sampler
 }
 
 // Option configures tracing bootstrap.

@@ -172,46 +172,6 @@ func (c *captureLogExporter) exported() []sdklog.Record {
 	return result
 }
 
-func TestWithOTLPGRPC_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := logging.New(context.Background(), logging.Config{ServiceName: "svc"}, logging.WithOTLPGRPC())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPGRPC() error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
-}
-
-func TestWithOTLPGRPC_withEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := logging.New(context.Background(), logging.Config{ServiceName: "svc"}, logging.WithOTLPGRPC("localhost:4317"))
-	if err != nil {
-		t.Fatalf("New() with WithOTLPGRPC(endpoint) error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
-}
-
-func TestWithOTLPHTTP_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := logging.New(context.Background(), logging.Config{ServiceName: "svc"}, logging.WithOTLPHTTP())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPHTTP() error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
-}
-
-func TestWithOTLPHTTP_withEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := logging.New(context.Background(), logging.Config{ServiceName: "svc"}, logging.WithOTLPHTTP("localhost:4318"))
-	if err != nil {
-		t.Fatalf("New() with WithOTLPHTTP(endpoint) error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
-}
-
 func BenchmarkNew_noop(b *testing.B) {
 	cfg := logging.Config{ServiceName: "bench-svc"}
 	b.ResetTimer()

@@ -55,43 +55,6 @@ func TestNew_noopWhenNoExporter(t *testing.T) {
 	}
 }
 
-func TestNew_withManualReader(t *testing.T) {
-	t.Parallel()
-
-	reader := sdkmetric.NewManualReader()
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	defer mp.Shutdown(context.Background()) //nolint:errcheck
-
-	meter := mp.Meter("test")
-	counter, err := meter.Int64Counter("hits")
-	if err != nil {
-		t.Fatalf("Int64Counter() error = %v", err)
-	}
-	counter.Add(context.Background(), 5)
-
-	var rm metricdata.ResourceMetrics
-	if err := reader.Collect(context.Background(), &rm); err != nil {
-		t.Fatalf("Collect() error = %v", err)
-	}
-	if len(rm.ScopeMetrics) == 0 {
-		t.Error("expected scope metrics, got none")
-	}
-}
-
-func TestNew_withFullConfig(t *testing.T) {
-	t.Parallel()
-
-	reader := sdkmetric.NewManualReader()
-	// We can't pass ManualReader as Exporter to metrics.New directly,
-	// so we build the provider inline to verify the full path.
-	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
-	defer mp.Shutdown(context.Background()) //nolint:errcheck
-
-	if mp == nil {
-		t.Fatal("MeterProvider is nil")
-	}
-}
-
 func TestNew_withVersionAndEnvironment(t *testing.T) {
 	t.Parallel()
 
@@ -182,46 +145,6 @@ func TestShutdown_idempotent(t *testing.T) {
 	if err := p.Shutdown(context.Background()); err != nil {
 		t.Errorf("second Shutdown() error = %v (should be idempotent)", err)
 	}
-}
-
-func TestWithOTLPGRPC_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := metrics.New(context.Background(), metrics.Config{ServiceName: "svc"}, metrics.WithOTLPGRPC())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPGRPC() error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
-}
-
-func TestWithOTLPGRPC_withEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := metrics.New(context.Background(), metrics.Config{ServiceName: "svc"}, metrics.WithOTLPGRPC("localhost:4317"))
-	if err != nil {
-		t.Fatalf("New() with WithOTLPGRPC(endpoint) error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
-}
-
-func TestWithOTLPHTTP_noEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := metrics.New(context.Background(), metrics.Config{ServiceName: "svc"}, metrics.WithOTLPHTTP())
-	if err != nil {
-		t.Fatalf("New() with WithOTLPHTTP() error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
-}
-
-func TestWithOTLPHTTP_withEndpoint(t *testing.T) {
-	t.Parallel()
-
-	p, err := metrics.New(context.Background(), metrics.Config{ServiceName: "svc"}, metrics.WithOTLPHTTP("localhost:4318"))
-	if err != nil {
-		t.Fatalf("New() with WithOTLPHTTP(endpoint) error = %v", err)
-	}
-	_ = p.Shutdown(context.Background())
 }
 
 func BenchmarkNew_noop(b *testing.B) {

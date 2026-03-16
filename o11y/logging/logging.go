@@ -20,11 +20,17 @@ var ErrServiceNameRequired = errors.New("logging: service name is required")
 
 // Config holds logging-specific configuration.
 type Config struct {
-	ServiceName        string
-	ServiceVersion     string
-	Environment        string
+	// ServiceName is the logical name of the service. Required.
+	ServiceName string
+	// ServiceVersion is the version string of the service (e.g. "1.2.3"). Optional.
+	ServiceVersion string
+	// Environment identifies the deployment environment (e.g. "prod", "staging"). Optional.
+	Environment string
+	// ResourceAttributes are additional OTel resource attributes merged into the resource. Optional.
 	ResourceAttributes []attribute.KeyValue
-	LogExporter        sdklog.Exporter
+	// LogExporter is the OTel log exporter.
+	// When nil, the provider falls back to slog.Default() and no OTel pipeline is created.
+	LogExporter sdklog.Exporter
 }
 
 // Option configures logging bootstrap.
