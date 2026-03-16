@@ -2,6 +2,7 @@ package oteltest
 
 import (
 	"context"
+	"sync"
 
 	"go.opentelemetry.io/otel/metric"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -13,6 +14,7 @@ import (
 type FakeMeter struct {
 	reader   *sdkmetric.ManualReader
 	provider *sdkmetric.MeterProvider
+	once     sync.Once
 }
 
 // NewFakeMeter creates a FakeMeter backed by a ManualReader.
@@ -35,6 +37,11 @@ func (f *FakeMeter) Collect(ctx context.Context) (metricdata.ResourceMetrics, er
 }
 
 // Shutdown shuts down the underlying MeterProvider, releasing resources.
+// Idempotent: subsequent calls are no-ops and return nil.
 func (f *FakeMeter) Shutdown(ctx context.Context) error {
-	return f.provider.Shutdown(ctx)
+	var err error
+	f.once.Do(func() {
+		err = f.provider.Shutdown(ctx)
+	})
+	return err
 }

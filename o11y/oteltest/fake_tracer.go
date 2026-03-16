@@ -3,6 +3,7 @@ package oteltest
 
 import (
 	"context"
+	"sync"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -14,6 +15,7 @@ import (
 type FakeTracer struct {
 	exporter *tracetest.InMemoryExporter
 	provider *sdktrace.TracerProvider
+	once     sync.Once
 }
 
 // NewFakeTracer creates a FakeTracer backed by an in-memory exporter.
@@ -22,6 +24,12 @@ func NewFakeTracer() *FakeTracer {
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
 	return &FakeTracer{exporter: exp, provider: tp}
+}
+
+// TracerProvider returns the underlying trace.TracerProvider.
+// Use this for drop-in replacement of any trace.TracerProvider reference.
+func (f *FakeTracer) TracerProvider() trace.TracerProvider {
+	return f.provider
 }
 
 // Tracer returns a trace.Tracer from the in-memory provider.
@@ -40,6 +48,11 @@ func (f *FakeTracer) Reset() {
 }
 
 // Shutdown shuts down the underlying TracerProvider, releasing resources.
+// Idempotent: subsequent calls are no-ops and return nil.
 func (f *FakeTracer) Shutdown(ctx context.Context) error {
-	return f.provider.Shutdown(ctx)
+	var err error
+	f.once.Do(func() {
+		err = f.provider.Shutdown(ctx)
+	})
+	return err
 }

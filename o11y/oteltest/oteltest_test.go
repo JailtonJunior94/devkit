@@ -188,6 +188,18 @@ func TestFakeTracer_shutdown(t *testing.T) {
 	}
 }
 
+func TestFakeTracer_shutdownIdempotent(t *testing.T) {
+	t.Parallel()
+
+	ft := oteltest.NewFakeTracer()
+	if err := ft.Shutdown(context.Background()); err != nil {
+		t.Errorf("first Shutdown() error = %v, want nil", err)
+	}
+	if err := ft.Shutdown(context.Background()); err != nil {
+		t.Errorf("second Shutdown() error = %v, want nil (must be idempotent)", err)
+	}
+}
+
 func TestFakeLogger_withGroupAndAttrs(t *testing.T) {
 	t.Parallel()
 
@@ -242,6 +254,18 @@ func TestFakeMeter_shutdown(t *testing.T) {
 	fm := oteltest.NewFakeMeter()
 	if err := fm.Shutdown(context.Background()); err != nil {
 		t.Errorf("Shutdown() error = %v, want nil", err)
+	}
+}
+
+func TestFakeMeter_shutdownIdempotent(t *testing.T) {
+	t.Parallel()
+
+	fm := oteltest.NewFakeMeter()
+	if err := fm.Shutdown(context.Background()); err != nil {
+		t.Errorf("first Shutdown() error = %v, want nil", err)
+	}
+	if err := fm.Shutdown(context.Background()); err != nil {
+		t.Errorf("second Shutdown() error = %v, want nil (must be idempotent)", err)
 	}
 }
 
