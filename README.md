@@ -1,5 +1,6 @@
 # DevKit Observability (o11y)
 
+[![CI](https://github.com/jailtonjunior/devkit/actions/workflows/ci.yml/badge.svg)](https://github.com/jailtonjunior/devkit/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/devkit/o11y.svg)](https://pkg.go.dev/devkit/o11y)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jailtonjunior/devkit)](https://goreportcard.com/report/github.com/jailtonjunior/devkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -23,6 +24,7 @@ Em vez de lidar com a complexidade de configurar múltiplos providers, exporters
 - [Configuração e Opções](#-configuração-e-opções)
 - [Testes e Mocking](#-testes-e-mocking)
 - [Boas Práticas](#-boas-práticas)
+- [Desenvolvimento](#️-desenvolvimento)
 - [Licença](#-licença)
 
 ---
@@ -226,6 +228,38 @@ func TestBusinessLogic(t *testing.T) {
 2.  **Context Everywhere**: Sempre passe o `context.Context` em suas funções para garantir que o rastreamento e a correlação de logs funcionem corretamente.
 3.  **Defer Shutdown**: Sempre utilize `defer sdk.Shutdown(ctx)` logo após a inicialização para evitar perda de dados em buffering.
 4.  **Use gRPC em Prod**: Para ambientes de alta performance, prefira os exporters gRPC (`otlpgrpc`).
+
+---
+
+## 🛠️ Desenvolvimento
+
+### Makefile
+
+Interface unificada para execução local dos mesmos passos da pipeline de CI.
+
+| Target | Descrição |
+| :--- | :--- |
+| `make tools` | Instala ferramentas ausentes (`golangci-lint`, `govulncheck`, `gosec`). |
+| `make lint` | Executa análise estática com `golangci-lint`. |
+| `make test` | Executa todos os testes com race detector e gera `coverage.out`. |
+| `make security` | Executa varredura de vulnerabilidades (`govulncheck` + `gosec`). |
+| `make ci` | Executa `lint`, `test` e `security` em sequência. Falha no primeiro erro. |
+
+**Exemplo de uso:**
+
+```bash
+make ci
+```
+
+### Conventional Commits
+
+O versionamento automático é baseado em [Conventional Commits](https://www.conventionalcommits.org/). O tipo do commit determina o bump de versão:
+
+| Prefixo | Impacto | Exemplo |
+| :--- | :--- | :--- |
+| `fix:` | Patch release (`v1.0.X`) | `fix: corrige propagação de contexto` |
+| `feat:` | Minor release (`v1.X.0`) | `feat: adiciona exporter HTTP` |
+| `feat!:` / `fix!:` / `BREAKING CHANGE:` | Major release (`vX.0.0`) | `feat!: remove API legada` |
 
 ---
 
