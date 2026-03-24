@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"devkit/o11y/internal/resource"
+	"devkit/pkg/o11y/internal/resource"
 )
 
 // ErrServiceNameRequired is returned when ServiceName is empty.

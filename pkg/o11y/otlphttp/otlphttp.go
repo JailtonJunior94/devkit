@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 
-	"devkit/o11y"
+	"devkit/pkg/o11y"
 )
 
 // WithTrace returns an o11y.Option that configures an OTLP HTTP span exporter.

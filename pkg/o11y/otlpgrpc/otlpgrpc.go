@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 
-	"devkit/o11y"
+	"devkit/pkg/o11y"
 )
 
 // WithTrace returns an o11y.Option that configures an OTLP gRPC span exporter.

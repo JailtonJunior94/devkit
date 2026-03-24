@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"devkit/o11y/oteltest"
+	"devkit/pkg/o11y/oteltest"
 )
 
 func ExampleNewFakeTracer() {

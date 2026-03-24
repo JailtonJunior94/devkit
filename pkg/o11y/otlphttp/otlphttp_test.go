@@ -1,11 +1,11 @@
-package otlpgrpc_test
+package otlphttp_test
 
 import (
 	"context"
 	"testing"
 
-	"devkit/o11y"
-	"devkit/o11y/otlpgrpc"
+	"devkit/pkg/o11y"
+	"devkit/pkg/o11y/otlphttp"
 )
 
 func TestWithTrace_noEndpoint(t *testing.T) {
@@ -14,7 +14,7 @@ func TestWithTrace_noEndpoint(t *testing.T) {
 	sdk, err := o11y.New(
 		context.Background(),
 		o11y.Config{ServiceName: "svc"},
-		otlpgrpc.WithTrace(),
+		otlphttp.WithTrace(),
 	)
 	if err != nil {
 		t.Fatalf("New() with WithTrace() error = %v", err)
@@ -28,7 +28,7 @@ func TestWithTrace_withEndpoint(t *testing.T) {
 	sdk, err := o11y.New(
 		context.Background(),
 		o11y.Config{ServiceName: "svc"},
-		otlpgrpc.WithTrace("localhost:4317"),
+		otlphttp.WithTrace("localhost:4318"),
 	)
 	if err != nil {
 		t.Fatalf("New() with WithTrace(endpoint) error = %v", err)
@@ -42,7 +42,7 @@ func TestWithMetric_noEndpoint(t *testing.T) {
 	sdk, err := o11y.New(
 		context.Background(),
 		o11y.Config{ServiceName: "svc"},
-		otlpgrpc.WithMetric(),
+		otlphttp.WithMetric(),
 	)
 	if err != nil {
 		t.Fatalf("New() with WithMetric() error = %v", err)
@@ -56,7 +56,7 @@ func TestWithMetric_withEndpoint(t *testing.T) {
 	sdk, err := o11y.New(
 		context.Background(),
 		o11y.Config{ServiceName: "svc"},
-		otlpgrpc.WithMetric("localhost:4317"),
+		otlphttp.WithMetric("localhost:4318"),
 	)
 	if err != nil {
 		t.Fatalf("New() with WithMetric(endpoint) error = %v", err)
@@ -70,7 +70,7 @@ func TestWithLog_noEndpoint(t *testing.T) {
 	sdk, err := o11y.New(
 		context.Background(),
 		o11y.Config{ServiceName: "svc"},
-		otlpgrpc.WithLog(),
+		otlphttp.WithLog(),
 	)
 	if err != nil {
 		t.Fatalf("New() with WithLog() error = %v", err)
@@ -84,7 +84,7 @@ func TestWithLog_withEndpoint(t *testing.T) {
 	sdk, err := o11y.New(
 		context.Background(),
 		o11y.Config{ServiceName: "svc"},
-		otlpgrpc.WithLog("localhost:4317"),
+		otlphttp.WithLog("localhost:4318"),
 	)
 	if err != nil {
 		t.Fatalf("New() with WithLog(endpoint) error = %v", err)

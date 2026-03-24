@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"devkit/o11y"
+	"devkit/pkg/o11y"
 )
 
 func ExampleNew() {

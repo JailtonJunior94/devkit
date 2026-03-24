@@ -9,7 +9,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
-	"devkit/o11y/metrics"
+	"devkit/pkg/o11y/metrics"
 )
 
 // noopMetricExporter implements sdkmetric.Exporter, discarding all data.

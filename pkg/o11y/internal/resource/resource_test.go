@@ -6,7 +6,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
-	"devkit/o11y/internal/resource"
+	"devkit/pkg/o11y/internal/resource"
 )
 
 func TestBuild(t *testing.T) {

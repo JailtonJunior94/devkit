@@ -20,9 +20,9 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
-	"devkit/o11y/logging"
-	"devkit/o11y/metrics"
-	"devkit/o11y/tracing"
+	"devkit/pkg/o11y/logging"
+	"devkit/pkg/o11y/metrics"
+	"devkit/pkg/o11y/tracing"
 )
 
 // ErrServiceNameRequired is returned by New when Config.ServiceName is empty.

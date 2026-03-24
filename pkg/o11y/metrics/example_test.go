@@ -7,7 +7,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
-	"devkit/o11y/metrics"
+	"devkit/pkg/o11y/metrics"
 )
 
 func ExampleNew_noop() {

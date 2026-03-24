@@ -13,7 +13,7 @@ import (
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
-	"devkit/o11y/internal/resource"
+	"devkit/pkg/o11y/internal/resource"
 )
 
 // ErrServiceNameRequired is returned when ServiceName is empty.

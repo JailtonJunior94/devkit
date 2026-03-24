@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"devkit/o11y/oteltest"
+	"devkit/pkg/o11y/oteltest"
 )
 
 // --- FakeTracer tests ---

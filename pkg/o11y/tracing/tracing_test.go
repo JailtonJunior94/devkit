@@ -9,7 +9,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"devkit/o11y/tracing"
+	"devkit/pkg/o11y/tracing"
 )
 
 // recordingExporter is a SpanExporter that stores spans for inspection.

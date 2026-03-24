@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
-	"devkit/o11y/internal/resource"
+	"devkit/pkg/o11y/internal/resource"
 )
 
 // ErrServiceNameRequired is returned when ServiceName is empty.

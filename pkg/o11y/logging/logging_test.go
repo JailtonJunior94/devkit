@@ -8,8 +8,8 @@ import (
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 
-	"devkit/o11y/logging"
-	"devkit/o11y/oteltest"
+	"devkit/pkg/o11y/logging"
+	"devkit/pkg/o11y/oteltest"
 )
 
 // noopLogExporter is a minimal sdklog.Exporter that discards all records,

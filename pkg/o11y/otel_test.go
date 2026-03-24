@@ -16,7 +16,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"devkit/o11y"
+	"devkit/pkg/o11y"
 )
 
 // countingSpanExporter counts exported spans without resetting on Shutdown.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"devkit/o11y/logging"
+	"devkit/pkg/o11y/logging"
 )
 
 func ExampleNew_fallback() {
