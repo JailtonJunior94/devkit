@@ -1,7 +1,7 @@
 GOLANGCI_LINT_VERSION := v2.11.3
 GOSEC_VERSION := v2.24.7
 
-.PHONY: lint test security ci tools
+.PHONY: lint test test-integration security ci tools
 
 tools:
 	@command -v golangci-lint >/dev/null 2>&1 || go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
@@ -13,6 +13,9 @@ lint: tools
 
 test:
 	go test -race -coverprofile=coverage.out ./...
+
+test-integration:
+	go test -race -tags integration -coverprofile=coverage-integration.out ./pkg/database/...
 
 security: tools
 	govulncheck ./...
