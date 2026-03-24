@@ -1,54 +1,44 @@
-# DevKit Observability (o11y)
+# DevKit
 
 [![CI](https://github.com/jailtonjunior/devkit/actions/workflows/ci.yml/badge.svg)](https://github.com/jailtonjunior/devkit/actions/workflows/ci.yml)
-[![Go Reference](https://pkg.go.dev/badge/devkit/o11y.svg)](https://pkg.go.dev/devkit/o11y)
+[![Go Reference](https://pkg.go.dev/badge/devkit.svg)](https://pkg.go.dev/devkit)
 [![Go Report Card](https://goreportcard.com/badge/github.com/jailtonjunior/devkit)](https://goreportcard.com/report/github.com/jailtonjunior/devkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-O **DevKit Observability (`o11y`)** é uma biblioteca Go de padrão enterprise projetada para simplificar drasticamente a implementação do **OpenTelemetry (OTel)** em microserviços. 
-
-Em vez de lidar com a complexidade de configurar múltiplos providers, exporters e propagadores manualmente, o `o11y` oferece uma fachada unificada e opinativa que garante consistência em **Tracing, Metrics e Logging** com o mínimo de esforço.
+**DevKit** é uma biblioteca Go de padrão enterprise com módulos independentes para os problemas mais comuns em microserviços: observabilidade, conexão com banco de dados, transações coordenadas e migrations. Cada módulo pode ser importado individualmente — você paga apenas pelo que usa.
 
 ---
 
 ## 📑 Sumário
 
-- [Destaques](#-destaques)
-- [Por que usar o DevKit?](#-por-que-usar-o-devkit)
+- [Módulos](#-módulos)
 - [Instalação](#-instalação)
-- [Início Rápido](#-início-rápido)
-- [Guia de Utilização](#-guia-de-utilização)
-    - [Rastreamento (Tracing)](#rastreamento-tracing)
-    - [Métricas (Metrics)](#métricas-metrics)
-    - [Logs Estruturados (Logging)](#logs-estruturados-logging)
-- [Configuração e Opções](#-configuração-e-opções)
-- [Testes e Mocking](#-testes-e-mocking)
-- [Boas Práticas](#-boas-práticas)
+- [Módulo: Database (`pkg/database`)](#-módulo-database-pkgdatabase)
+  - [Início Rápido — Database Manager](#início-rápido--database-manager)
+  - [Opções de Pool](#opções-de-pool)
+  - [Unit of Work (`pkg/database/uow`)](#unit-of-work-pkgdatabaseuow)
+  - [Migrations (`pkg/database/migrate`)](#migrations-pkgdatabasemigrate)
+  - [Testes de Integração](#testes-de-integração-database)
+- [Módulo: Observabilidade (`o11y`)](#-módulo-observabilidade-o11y)
+  - [Início Rápido — o11y](#início-rápido--o11y)
+  - [Rastreamento (Tracing)](#rastreamento-tracing)
+  - [Métricas (Metrics)](#métricas-metrics)
+  - [Logs Estruturados (Logging)](#logs-estruturados-logging)
+  - [Configuração e Opções](#configuração-e-opções)
+  - [Testes e Mocking](#testes-e-mocking)
 - [Desenvolvimento](#️-desenvolvimento)
 - [Licença](#-licença)
 
 ---
 
-## ✨ Destaques
+## 📦 Módulos
 
-- 🛡️ **Abstração Enterprise**: Esconde a verbosidade do SDK oficial do OpenTelemetry.
-- 🚀 **Setup Unificado**: Inicialize Tracing, Metrics e Logging em uma única chamada.
-- 📊 **Suporte OTLP Nativo**: Exportação simplificada via gRPC e HTTP (v1).
-- 🪵 **Integração slog**: Bridge nativo para o `log/slog` do Go, correlacionando logs com traces.
-- 🧪 **Testabilidade de Primeira Classe**: Pacote `oteltest` para validação de sinais em memória.
-- 🔗 **Propagação de Contexto**: Suporte fácil para W3C TraceContext e Baggage.
-- 🛑 **Graceful Shutdown**: Gerenciamento limpo de flush de dados e encerramento de conexões.
-
----
-
-## 🤔 Por que usar o DevKit?
-
-Configurar o OpenTelemetry corretamente envolve muitas decisões: qual sampler usar? Como configurar o resource? Como garantir que os logs tenham o `trace_id` correto? 
-
-O `devkit/o11y` resolve isso ao:
-1.  **Reduzir Boilerplate**: O que levaria ~100 linhas de código OTel puro é feito em ~10.
-2.  **Garantir Consistência**: Todos os sinais (logs, métricas, traces) compartilham os mesmos atributos de recurso (nome do serviço, versão, ambiente).
-3.  **Evitar Estado Global**: Por padrão, não registra providers globais, facilitando o isolamento em testes (exceto quando solicitado explicitamente para propagação).
+| Módulo | Pacote | Descrição |
+| :--- | :--- | :--- |
+| Database Manager | `pkg/database` | Pool de conexão configurável, multi-driver, shutdown gracioso |
+| Unit of Work | `pkg/database/uow` | Transações coordenadas via `.Do()`, rollback automático |
+| Migrations | `pkg/database/migrate` | Migrations Up/Down com `golang-migrate` e `embed.FS` |
+| Observabilidade | `o11y` | Tracing, Metrics e Logging via OpenTelemetry |
 
 ---
 
@@ -60,159 +50,299 @@ go get devkit
 
 ---
 
-## ⚡ Início Rápido
+## 🗄️ Módulo: Database (`pkg/database`)
 
-O exemplo abaixo mostra como configurar o SDK completo enviando dados para um coletor local.
+Gerencia connection pool para Postgres, MySQL e SQL Server. Não expõe abstrações sobre `database/sql` — o consumidor recebe o `*sql.DB` nativo e usa diretamente.
+
+O consumidor registra o driver desejado via import side-effect no `main.go`:
 
 ```go
-package main
+import _ "github.com/lib/pq"                      // postgres
+import _ "github.com/go-sql-driver/mysql"          // mysql
+import _ "github.com/microsoft/go-mssqldb"         // sqlserver
+```
 
+### Início Rápido — Database Manager
+
+```go
+import "devkit/pkg/database"
+
+ctx := context.Background()
+
+mgr, err := database.New(ctx, database.Config{
+    Driver: "postgres",
+    DSN:    "postgres://user:pass@localhost/mydb?sslmode=disable",
+})
+if err != nil {
+    log.Fatalf("falha ao conectar: %v", err)
+}
+defer func() { _ = mgr.Close(ctx) }()
+
+// Acesso direto ao *sql.DB nativo
+rows, err := mgr.DB().QueryContext(ctx, "SELECT id, name FROM users")
+```
+
+### Opções de Pool
+
+Os parâmetros de pool são opcionais. Os defaults cobrem a maioria dos casos:
+
+| Opção | Default | Descrição |
+| :--- | :--- | :--- |
+| `WithMaxOpenConns(n)` | 25 | Máximo de conexões abertas |
+| `WithMaxIdleConns(n)` | 5 | Máximo de conexões idle no pool |
+| `WithConnMaxLifetime(d)` | 5m | Tempo máximo de reuso de uma conexão |
+| `WithConnMaxIdleTime(d)` | 5m | Tempo máximo idle de uma conexão |
+
+```go
+mgr, err := database.New(ctx, database.Config{Driver: "postgres", DSN: dsn},
+    database.WithMaxOpenConns(50),
+    database.WithMaxIdleConns(10),
+    database.WithConnMaxLifetime(10*time.Minute),
+)
+```
+
+### Unit of Work (`pkg/database/uow`)
+
+Coordena múltiplos repositórios em uma única transação. Commit automático em sucesso, rollback automático em erro ou panic.
+
+```go
+import "devkit/pkg/database/uow"
+
+u, err := uow.New(db)
+if err != nil { ... }
+
+u.Register("users", func(tx *sql.Tx) any {
+    return NewUserRepository(tx)
+})
+
+err = u.Do(ctx, func(ctx context.Context) error {
+    repo, err := uow.GetRepository[*UserRepository](ctx, u, "users")
+    if err != nil {
+        return err
+    }
+    if err := repo.Save(ctx, "Alice"); err != nil {
+        return err
+    }
+    return repo.Save(ctx, "Bob")
+    // sucesso → commit automático
+    // erro    → rollback automático
+    // panic   → rollback + re-panic
+})
+```
+
+Repositórios implementam a interface `uow.Querier`, que é satisfeita tanto por `*sql.DB` quanto por `*sql.Tx`. Isso permite usá-los fora de transação sem alteração de código:
+
+```go
+type UserRepository struct {
+    q uow.Querier
+}
+
+func NewUserRepository(q uow.Querier) *UserRepository {
+    return &UserRepository{q: q}
+}
+```
+
+**Opções de `uow.New`:**
+
+| Opção | Default | Descrição |
+| :--- | :--- | :--- |
+| `WithTxOptions(opts)` | nil | Nível de isolamento e modo de leitura/escrita das transações |
+
+```go
+u, err := uow.New(db,
+    uow.WithTxOptions(&sql.TxOptions{
+        Isolation: sql.LevelSerializable,
+        ReadOnly:  false,
+    }),
+)
+```
+
+### Migrations (`pkg/database/migrate`)
+
+Executa migrations Up/Down via `golang-migrate`. Recebe um `*sql.DB` existente e um `fs.FS` com os arquivos SQL — compatível com `embed.FS` para embutir as migrations no binário.
+
+```go
 import (
-	"context"
-	"log"
-
-	"devkit/o11y"
-	"devkit/o11y/otlpgrpc" // Recomendado para performance
+    "embed"
+    "io/fs"
+    "devkit/pkg/database/migrate"
 )
 
-func main() {
-	ctx := context.Background()
+//go:embed migrations
+var migrationsFS embed.FS
 
-	// 1. Inicialização Unificada
-	sdk, err := o11y.New(ctx, o11y.Config{
-		ServiceName:    "order-api",
-		ServiceVersion: "1.0.0",
-		Environment:    "production",
-	}, 
-	otlpgrpc.WithTrace(),  // Exporta traces via gRPC (default: localhost:4317)
-	otlpgrpc.WithMetric(), // Exporta métricas via gRPC
-	otlpgrpc.WithLog(),    // Exporta logs via gRPC
-	o11y.WithW3CPropagators(), // Habilita propagação distribuída
-	)
-	if err != nil {
-		log.Fatalf("falha ao configurar o11y: %v", err)
-	}
-	
-	// 2. Garante o flush dos dados no encerramento
-	defer sdk.Shutdown(ctx)
+sub, err := fs.Sub(migrationsFS, "migrations")
+if err != nil { ... }
 
-	// 3. Utilização
-	logger := sdk.Logger()
-	logger.Info("Aplicação iniciada com observabilidade completa!")
+m, err := migrate.New(db, sub, migrate.Config{DatabaseDriver: "postgres"})
+if err != nil { ... }
+defer func() { _ = m.Close() }()
+
+// Aplica todas as migrations pendentes
+if err := m.Up(ctx); err != nil {
+    log.Fatalf("migration falhou: %v", err)
 }
+
+// Reverte todas as migrations aplicadas
+if err := m.Down(ctx); err != nil {
+    log.Fatalf("rollback de migration falhou: %v", err)
+}
+```
+
+Estrutura de arquivos de migration:
+
+```
+migrations/
+├── 000001_create_users.up.sql
+├── 000001_create_users.down.sql
+├── 000002_add_email.up.sql
+└── 000002_add_email.down.sql
+```
+
+**Opções de `migrate.New`:**
+
+| Opção | Default | Descrição |
+| :--- | :--- | :--- |
+| `WithMigrationsTable(name)` | `"schema_migrations"` | Nome da tabela de controle de versão |
+
+```go
+m, err := migrate.New(db, sub, migrate.Config{DatabaseDriver: "postgres"},
+    migrate.WithMigrationsTable("db_migrations"),
+)
+```
+
+**Erros sentinela:**
+
+| Erro | Quando ocorre |
+| :--- | :--- |
+| `ErrDatabaseRequired` | `db` nil ou `DatabaseDriver` vazio |
+| `ErrSourceRequired` | `fsys` nil |
+| `ErrDirtyDatabase` | Migration table em estado dirty — use `Force()` na instância subjacente |
+
+### Testes de Integração (Database)
+
+Os testes de integração usam [testcontainers-go](https://golang.testcontainers.org/) e requerem Docker. São separados dos testes unitários via build tag:
+
+```bash
+# Unitários (padrão, sem Docker)
+make test
+
+# Integração (requer Docker)
+make test-integration
 ```
 
 ---
 
-## 🔍 Guia de Utilização
+## 📡 Módulo: Observabilidade (`o11y`)
+
+O **`o11y`** é uma fachada unificada e opinativa sobre o SDK oficial do OpenTelemetry. Inicializa Tracing, Metrics e Logging em uma única chamada, garantindo consistência de atributos de recurso entre todos os sinais.
+
+### Início Rápido — o11y
+
+```go
+import (
+    "devkit/o11y"
+    "devkit/o11y/otlpgrpc"
+)
+
+sdk, err := o11y.New(ctx, o11y.Config{
+    ServiceName:    "order-api",
+    ServiceVersion: "1.0.0",
+    Environment:    "production",
+},
+    otlpgrpc.WithTrace(),
+    otlpgrpc.WithMetric(),
+    otlpgrpc.WithLog(),
+    o11y.WithW3CPropagators(),
+)
+if err != nil {
+    log.Fatalf("falha ao configurar o11y: %v", err)
+}
+defer sdk.Shutdown(ctx)
+
+logger := sdk.Logger()
+logger.Info("aplicação iniciada com observabilidade completa!")
+```
 
 ### Rastreamento (Tracing)
 
-O rastreamento permite visualizar o fluxo de uma requisição.
-
 ```go
-func processOrder(ctx context.Context, orderID string) {
+func processOrder(ctx context.Context, sdk *o11y.Observability, orderID string) {
     tracer := sdk.TracerProvider().Tracer("orders")
-    
-    // Inicia um span
+
     ctx, span := tracer.Start(ctx, "process-order")
     defer span.End()
 
     span.SetAttributes(attribute.String("order.id", orderID))
 
-    // O logger injetará automaticamente o trace_id no log
+    // O logger injeta automaticamente trace_id e span_id
     sdk.Logger().InfoContext(ctx, "validando estoque")
 }
 ```
 
 ### Métricas (Metrics)
 
-Capture dados quantitativos sobre o comportamento do sistema.
-
 ```go
-import "go.opentelemetry.io/otel/metric"
-
-func recordPayment(sdk *o11y.Observability) {
+func recordPayment(ctx context.Context, sdk *o11y.Observability) {
     meter := sdk.MeterProvider().Meter("payments")
-    
-    counter, _ := meter.Int64Counter("payments_total", 
-        metric.WithDescription("Total de pagamentos processados"),
-    )
 
-    counter.Add(context.Background(), 1, 
-        metric.WithAttributes(attribute.String("status", "success")),
+    counter, _ := meter.Int64Counter("payments_total",
+        metric.WithDescription("total de pagamentos processados"),
     )
+    counter.Add(ctx, 1, metric.WithAttributes(attribute.String("status", "success")))
 }
 ```
 
 ### Logs Estruturados (Logging)
 
-A integração com `slog` garante que seus logs sejam estruturados e compatíveis com o padrão OTLP.
-
 ```go
 logger := sdk.Logger()
 
-// Log simples
-logger.Info("usuário logado", "user_id", 42)
+logger.Info("usuário autenticado", "user_id", 42)
 
-// Log com contexto (inclui TraceID/SpanID se houver um span ativo)
-logger.ErrorContext(ctx, "falha na conexão com banco", 
+logger.ErrorContext(ctx, "falha na query",
     "db_host", "localhost",
     "error", err,
 )
 ```
 
----
+### Configuração e Opções
 
-## ⚙️ Configuração e Opções
+**`o11y.Config`:**
 
-A função `o11y.New` aceita a struct `Config` e múltiplas `Options`.
-
-### Config Struct
-
-| Atributo | Descrição |
+| Campo | Descrição |
 | :--- | :--- |
-| `ServiceName` | **(Obrigatório)** Identificador do serviço. |
-| `ServiceVersion` | Versão da aplicação (ex: tag git ou semver). |
-| `Environment` | Ambiente (ex: "prod", "dev", "staging"). |
-| `ResourceAttributes` | Lista de `attribute.KeyValue` extras para o recurso. |
+| `ServiceName` | **(Obrigatório)** Identificador do serviço |
+| `ServiceVersion` | Versão da aplicação (ex: tag git ou semver) |
+| `Environment` | Ambiente (ex: `"prod"`, `"staging"`) |
+| `ResourceAttributes` | Atributos `attribute.KeyValue` extras para o resource |
 
-### Options Disponíveis
+**Options disponíveis:**
 
 | Opção | Descrição |
 | :--- | :--- |
-| `otlpgrpc.WithTrace(endpoint)` | Configura exporter de Trace via gRPC. |
-| `otlpgrpc.WithMetric(endpoint)`| Configura exporter de Metrics via gRPC. |
-| `otlpgrpc.WithLog(endpoint)`   | Configura exporter de Logs via gRPC. |
-| `otlphttp.WithTrace(endpoint)` | Configura exporter de Trace via HTTP. |
-| `otlphttp.WithMetric(endpoint)`| Configura exporter de Metrics via HTTP. |
-| `otlphttp.WithLog(endpoint)`   | Configura exporter de Logs via HTTP. |
-| `WithSampler(sampler)`         | Define estratégia de amostragem (AlwaysOn, AlwaysOff, ParentBased, etc). |
-| `WithMetricInterval(duration)` | Intervalo entre exportações de métricas (Default: 60s). |
-| `WithW3CPropagators()`         | Ativa propagação de contexto (TraceContext + Baggage). |
+| `otlpgrpc.WithTrace(endpoint)` | Exporter de Trace via gRPC |
+| `otlpgrpc.WithMetric(endpoint)` | Exporter de Metrics via gRPC |
+| `otlpgrpc.WithLog(endpoint)` | Exporter de Logs via gRPC |
+| `otlphttp.WithTrace(endpoint)` | Exporter de Trace via HTTP |
+| `otlphttp.WithMetric(endpoint)` | Exporter de Metrics via HTTP |
+| `otlphttp.WithLog(endpoint)` | Exporter de Logs via HTTP |
+| `WithSampler(sampler)` | Estratégia de amostragem |
+| `WithMetricInterval(d)` | Intervalo entre exportações de métricas (default: 60s) |
+| `WithW3CPropagators()` | Ativa propagação W3C TraceContext + Baggage |
 
----
-
-## 🧪 Testes e Mocking
-
-Não é necessário rodar um coletor OTel para seus testes unitários. Use o `oteltest`.
+### Testes e Mocking
 
 ```go
-import (
-    "devkit/o11y/oteltest"
-    "testing"
-)
+import "devkit/o11y/oteltest"
 
 func TestBusinessLogic(t *testing.T) {
-    // Cria um tracer em memória
     fake := oteltest.NewFakeTracer()
-    
-    // Execute sua lógica passando o provider fake
+
     tracer := fake.Tracer("test")
     _, span := tracer.Start(context.Background(), "op")
     span.End()
 
-    // Verifique os spans gerados
     spans := fake.Spans()
     if len(spans) != 1 {
         t.Errorf("esperava 1 span, obteve %d", len(spans))
@@ -222,30 +352,18 @@ func TestBusinessLogic(t *testing.T) {
 
 ---
 
-## 💡 Boas Práticas
-
-1.  **Singleton**: Inicialize o `Observability` uma única vez no `main.go` e compartilhe o objeto ou seus providers.
-2.  **Context Everywhere**: Sempre passe o `context.Context` em suas funções para garantir que o rastreamento e a correlação de logs funcionem corretamente.
-3.  **Defer Shutdown**: Sempre utilize `defer sdk.Shutdown(ctx)` logo após a inicialização para evitar perda de dados em buffering.
-4.  **Use gRPC em Prod**: Para ambientes de alta performance, prefira os exporters gRPC (`otlpgrpc`).
-
----
-
 ## 🛠️ Desenvolvimento
 
 ### Makefile
 
-Interface unificada para execução local dos mesmos passos da pipeline de CI.
-
 | Target | Descrição |
 | :--- | :--- |
-| `make tools` | Instala ferramentas ausentes (`golangci-lint`, `govulncheck`, `gosec`). |
-| `make lint` | Executa análise estática com `golangci-lint`. |
-| `make test` | Executa todos os testes com race detector e gera `coverage.out`. |
-| `make security` | Executa varredura de vulnerabilidades (`govulncheck` + `gosec`). |
-| `make ci` | Executa `lint`, `test` e `security` em sequência. Falha no primeiro erro. |
-
-**Exemplo de uso:**
+| `make tools` | Instala ferramentas ausentes (`golangci-lint`, `govulncheck`, `gosec`) |
+| `make lint` | Análise estática com `golangci-lint` |
+| `make test` | Testes unitários com race detector e `coverage.out` |
+| `make test-integration` | Testes de integração com Docker (testcontainers) |
+| `make security` | Varredura de vulnerabilidades (`govulncheck` + `gosec`) |
+| `make ci` | `lint` + `test` + `security` em sequência |
 
 ```bash
 make ci
@@ -253,19 +371,17 @@ make ci
 
 ### Conventional Commits
 
-O versionamento automático é baseado em [Conventional Commits](https://www.conventionalcommits.org/). O tipo do commit determina o bump de versão:
-
 | Prefixo | Impacto | Exemplo |
 | :--- | :--- | :--- |
-| `fix:` | Patch release (`v1.0.X`) | `fix: corrige propagação de contexto` |
-| `feat:` | Minor release (`v1.X.0`) | `feat: adiciona exporter HTTP` |
-| `feat!:` / `fix!:` / `BREAKING CHANGE:` | Major release (`vX.0.0`) | `feat!: remove API legada` |
+| `fix:` | Patch (`v1.0.X`) | `fix: corrige rollback em panic no UoW` |
+| `feat:` | Minor (`v1.X.0`) | `feat: adiciona WithMigrationsTable` |
+| `feat!:` / `BREAKING CHANGE:` | Major (`vX.0.0`) | `feat!: remove API legada` |
 
 ---
 
 ## 🤝 Contribuição
 
-Contribuições são bem-vindas! Se você encontrar um bug ou tiver uma sugestão de melhoria, sinta-se à vontade para abrir uma issue ou enviar um PR.
+Contribuições são bem-vindas. Abra uma issue ou envie um PR.
 
 ---
 
