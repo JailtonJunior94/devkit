@@ -10,6 +10,9 @@ import (
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 
 	"devkit/pkg/database"
+	_ "devkit/pkg/database/mysql"
+	_ "devkit/pkg/database/postgres"
+	_ "devkit/pkg/database/sqlserver"
 )
 
 // --- Config validation (table-driven) ---
@@ -38,30 +41,38 @@ func TestNew_configValidation(t *testing.T) {
 		},
 		{
 			name: "max idle conns greater than max open conns",
-			cfg:  database.Config{Driver: "postgres", DSN: "postgres://localhost/testdb"},
-			opts: []database.Option{
-				database.WithMaxOpenConns(5),
-				database.WithMaxIdleConns(10),
+			cfg: database.Config{
+				Driver:       "postgres",
+				DSN:          "postgres://localhost/testdb",
+				MaxOpenConns: 5,
+				MaxIdleConns: 10,
 			},
 			wantErr: database.ErrInvalidPoolConfig,
 		},
 		{
-			name:    "negative max open conns",
-			cfg:     database.Config{Driver: "postgres", DSN: "postgres://localhost/testdb"},
-			opts:    []database.Option{database.WithMaxOpenConns(-1)},
+			name: "negative max open conns",
+			cfg: database.Config{
+				Driver:       "postgres",
+				DSN:          "postgres://localhost/testdb",
+				MaxOpenConns: -1,
+			},
 			wantErr: database.ErrInvalidPoolConfig,
 		},
 		{
-			name:    "negative max idle conns",
-			cfg:     database.Config{Driver: "postgres", DSN: "postgres://localhost/testdb"},
-			opts:    []database.Option{database.WithMaxIdleConns(-1)},
+			name: "negative max idle conns",
+			cfg: database.Config{
+				Driver:       "postgres",
+				DSN:          "postgres://localhost/testdb",
+				MaxIdleConns: -1,
+			},
 			wantErr: database.ErrInvalidPoolConfig,
 		},
 		{
 			name: "max idle conns exceeds default max open conns",
-			cfg:  database.Config{Driver: "postgres", DSN: "postgres://localhost/testdb"},
-			opts: []database.Option{
-				database.WithMaxIdleConns(database.DefaultMaxOpenConns + 1),
+			cfg: database.Config{
+				Driver:       "postgres",
+				DSN:          "postgres://localhost/testdb",
+				MaxIdleConns: database.DefaultMaxOpenConns + 1,
 			},
 			wantErr: database.ErrInvalidPoolConfig,
 		},
@@ -83,15 +94,12 @@ func TestNew_configValidation(t *testing.T) {
 // --- Config defaults ---
 
 func TestNew_defaultsApplied(t *testing.T) {
-	// WithMaxIdleConns(26) triggers ErrInvalidPoolConfig only because MaxOpenConns
-	// defaults to DefaultMaxOpenConns (25). This proves the default was applied.
 	cfg := database.Config{
-		Driver: "postgres",
-		DSN:    "postgres://localhost/testdb",
+		Driver:       "postgres",
+		DSN:          "postgres://localhost/testdb",
+		MaxIdleConns: database.DefaultMaxOpenConns + 1,
 	}
-	_, err := database.New(context.Background(), cfg,
-		database.WithMaxIdleConns(database.DefaultMaxOpenConns+1), // 26 > 25 default
-	)
+	_, err := database.New(context.Background(), cfg)
 	if !errors.Is(err, database.ErrInvalidPoolConfig) {
 		t.Fatalf("expected ErrInvalidPoolConfig (proving MaxOpenConns defaulted to %d), got %v",
 			database.DefaultMaxOpenConns, err)
@@ -109,6 +117,62 @@ func TestNew_defaultsApplied(t *testing.T) {
 	}
 	if database.DefaultConnMaxIdleTime != 5*time.Minute {
 		t.Errorf("DefaultConnMaxIdleTime = %v, want 5m", database.DefaultConnMaxIdleTime)
+	}
+}
+
+func TestNew_configPoolFieldsApplied(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+
+	restore := database.SetSQLOpenFunc(func(_, _ string) (*sql.DB, error) {
+		return db, nil
+	})
+	defer restore()
+
+	mgr, err := database.New(context.Background(), database.Config{
+		Driver:          "postgres",
+		DSN:             "postgres://localhost/testdb",
+		MaxOpenConns:    7,
+		MaxIdleConns:    3,
+		ConnMaxLifetime: 2 * time.Minute,
+		ConnMaxIdleTime: time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("database.New: %v", err)
+	}
+
+	stats := mgr.DB().Stats()
+	if stats.MaxOpenConnections != 7 {
+		t.Fatalf("MaxOpenConnections = %d, want 7", stats.MaxOpenConnections)
+	}
+}
+
+func TestNew_optionsOverrideConfigFields(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+
+	restore := database.SetSQLOpenFunc(func(_, _ string) (*sql.DB, error) {
+		return db, nil
+	})
+	defer restore()
+
+	mgr, err := database.New(context.Background(), database.Config{
+		Driver:       "postgres",
+		DSN:          "postgres://localhost/testdb",
+		MaxOpenConns: 7,
+		MaxIdleConns: 3,
+	}, database.WithMaxOpenConns(11), database.WithMaxIdleConns(4))
+	if err != nil {
+		t.Fatalf("database.New: %v", err)
+	}
+
+	stats := mgr.DB().Stats()
+	if stats.MaxOpenConnections != 11 {
+		t.Fatalf("MaxOpenConnections = %d, want 11", stats.MaxOpenConnections)
 	}
 }
 
@@ -187,6 +251,55 @@ func TestClose_idempotent(t *testing.T) {
 
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Errorf("unmet sqlmock expectations: %v", err)
+	}
+}
+
+type blockingCloser struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *blockingCloser) Close() error {
+	close(c.started)
+	<-c.release
+	return nil
+}
+
+func TestClose_respectsContextCancellation(t *testing.T) {
+	db, _, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+
+	closer := &blockingCloser{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	mgr := database.NewWithCloser(db, closer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- mgr.Close(ctx)
+	}()
+
+	<-closer.started
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Close error = %v, want %v", err, context.DeadlineExceeded)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not return after context cancellation")
+	}
+
+	close(closer.release)
+
+	if err := mgr.Close(context.Background()); err != nil {
+		t.Fatalf("Close after release: %v", err)
 	}
 }
 

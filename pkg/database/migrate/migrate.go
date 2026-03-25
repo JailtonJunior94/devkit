@@ -27,7 +27,22 @@ import (
 	gmigmysql "github.com/golang-migrate/migrate/v4/database/mysql"
 	gmigpostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	gmigsqlserver "github.com/golang-migrate/migrate/v4/database/sqlserver"
+	gmigsource "github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+)
+
+var (
+	newSourceDriver        func(fs.FS, string) (gmigsource.Driver, error)                                          = iofs.New
+	newMigrateWithInstance func(string, gmigsource.Driver, string, gmigdatabase.Driver) (*gmigrate.Migrate, error) = gmigrate.NewWithInstance
+	createPostgresDriver                                                                                           = func(db *sql.DB, migrationsTable string) (gmigdatabase.Driver, error) {
+		return gmigpostgres.WithInstance(db, &gmigpostgres.Config{MigrationsTable: migrationsTable})
+	}
+	createMySQLDriver = func(db *sql.DB, migrationsTable string) (gmigdatabase.Driver, error) {
+		return gmigmysql.WithInstance(db, &gmigmysql.Config{MigrationsTable: migrationsTable})
+	}
+	createSQLServerDriver = func(db *sql.DB, migrationsTable string) (gmigdatabase.Driver, error) {
+		return gmigsqlserver.WithInstance(db, &gmigsqlserver.Config{MigrationsTable: migrationsTable})
+	}
 )
 
 // Option configures optional Migrator settings. Use the With... functions to
@@ -86,7 +101,7 @@ func New(db *sql.DB, fsys fs.FS, cfg Config, opts ...Option) (*Migrator, error) 
 		opt(o)
 	}
 
-	sourceDriver, err := iofs.New(fsys, ".")
+	sourceDriver, err := newSourceDriver(fsys, ".")
 	if err != nil {
 		return nil, fmt.Errorf("migrate: create source driver: %w", err)
 	}
@@ -96,7 +111,7 @@ func New(db *sql.DB, fsys fs.FS, cfg Config, opts ...Option) (*Migrator, error) 
 		return nil, fmt.Errorf("migrate: create database driver: %w", err)
 	}
 
-	instance, err := gmigrate.NewWithInstance("iofs", sourceDriver, cfg.DatabaseDriver, dbDriver)
+	instance, err := newMigrateWithInstance("iofs", sourceDriver, cfg.DatabaseDriver, dbDriver)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: create instance: %w", err)
 	}
@@ -144,11 +159,11 @@ func wrapMigrateError(err error, direction string) error {
 func createDatabaseDriver(db *sql.DB, driver, migrationsTable string) (gmigdatabase.Driver, error) {
 	switch driver {
 	case "postgres":
-		return gmigpostgres.WithInstance(db, &gmigpostgres.Config{MigrationsTable: migrationsTable})
+		return createPostgresDriver(db, migrationsTable)
 	case "mysql":
-		return gmigmysql.WithInstance(db, &gmigmysql.Config{MigrationsTable: migrationsTable})
+		return createMySQLDriver(db, migrationsTable)
 	case "sqlserver":
-		return gmigsqlserver.WithInstance(db, &gmigsqlserver.Config{MigrationsTable: migrationsTable})
+		return createSQLServerDriver(db, migrationsTable)
 	default:
 		return nil, fmt.Errorf("migrate: unsupported driver: %s", driver)
 	}

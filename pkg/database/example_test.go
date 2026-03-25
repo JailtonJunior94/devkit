@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	// Import the driver of your choice via side-effect in your main.go:
-	//   import _ "github.com/lib/pq"
-	//   import _ "github.com/go-sql-driver/mysql"
-	//   import _ "github.com/microsoft/go-mssqldb"
+	// Import the driver sub-package of your choice via side-effect in your main.go:
+	//   import _ "devkit/pkg/database/postgres"
+	//   import _ "devkit/pkg/database/mysql"
+	//   import _ "devkit/pkg/database/sqlserver"
+	_ "devkit/pkg/database/postgres"
 
 	"devkit/pkg/database"
 )
@@ -18,8 +19,12 @@ func ExampleNew() {
 	ctx := context.Background()
 
 	mgr, err := database.New(ctx, database.Config{
-		Driver: "postgres",
-		DSN:    "postgres://user:pass@localhost/mydb?sslmode=disable",
+		Driver:          "postgres",
+		DSN:             "postgres://user:pass@localhost/mydb?sslmode=disable",
+		MaxOpenConns:    25,
+		MaxIdleConns:    5,
+		ConnMaxLifetime: database.DefaultConnMaxLifetime,
+		ConnMaxIdleTime: database.DefaultConnMaxIdleTime,
 	})
 	if err != nil {
 		fmt.Printf("failed to connect: %v\n", err)

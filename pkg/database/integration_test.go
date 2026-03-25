@@ -4,18 +4,18 @@ package database_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
+	testcontainers "github.com/testcontainers/testcontainers-go"
 	tcmssql "github.com/testcontainers/testcontainers-go/modules/mssql"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	testcontainers "github.com/testcontainers/testcontainers-go"
-
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
-	_ "github.com/microsoft/go-mssqldb"
 
 	"devkit/pkg/database"
+	_ "devkit/pkg/database/mysql"
+	_ "devkit/pkg/database/postgres"
+	_ "devkit/pkg/database/sqlserver"
 )
 
 // --- Postgres ---
@@ -150,6 +150,10 @@ func TestManagerMySQL_newPingClose(t *testing.T) {
 // --- SQL Server ---
 
 func TestManagerSQLServer_newPingClose(t *testing.T) {
+	if os.Getenv("RUN_SQLSERVER_INTEGRATION") != "1" {
+		t.Skip("SQL Server requires ~1.5GB Docker image; set RUN_SQLSERVER_INTEGRATION=1 to run manually")
+	}
+
 	ctx := context.Background()
 
 	container, err := tcmssql.Run(ctx, "mcr.microsoft.com/mssql/server:2022-latest",

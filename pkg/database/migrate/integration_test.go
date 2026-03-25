@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"embed"
 	"io/fs"
+	"os"
 	"testing"
 
 	testcontainers "github.com/testcontainers/testcontainers-go"
@@ -14,9 +15,9 @@ import (
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
-	_ "github.com/microsoft/go-mssqldb"
+	_ "devkit/pkg/database/mysql"
+	_ "devkit/pkg/database/postgres"
+	_ "devkit/pkg/database/sqlserver"
 
 	"devkit/pkg/database/migrate"
 )
@@ -176,6 +177,8 @@ func runMigrateTests(t *testing.T, setup containerSetup) {
 func TestMigratePostgres(t *testing.T) { runMigrateTests(t, startPostgres(t)) }
 func TestMigrateMySQL(t *testing.T)    { runMigrateTests(t, startMySQL(t)) }
 func TestMigrateSQLServer(t *testing.T) {
-	t.Skip("SQL Server requires ~1.5GB Docker image; run manually with -run TestMigrateSQLServer")
+	if os.Getenv("RUN_SQLSERVER_INTEGRATION") != "1" {
+		t.Skip("SQL Server requires ~1.5GB Docker image; set RUN_SQLSERVER_INTEGRATION=1 to run manually")
+	}
 	runMigrateTests(t, startSQLServer(t))
 }

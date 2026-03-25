@@ -5,9 +5,9 @@
 // The consumer is responsible for registering the appropriate database driver via
 // import side-effect before calling New:
 //
-//	import _ "github.com/lib/pq"                     // postgres
-//	import _ "github.com/go-sql-driver/mysql"         // mysql
-//	import _ "github.com/microsoft/go-mssqldb"        // sqlserver
+//	import _ "devkit/pkg/database/postgres"
+//	import _ "devkit/pkg/database/mysql"
+//	import _ "devkit/pkg/database/sqlserver"
 package database
 
 import (
@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"devkit/pkg/database/internal/driverreg"
 )
 
 const (
@@ -29,29 +31,35 @@ const (
 	DefaultConnMaxIdleTime = 5 * time.Minute
 )
 
-// supportedDrivers is the set of drivers accepted by New. Adding a new driver
-// requires a single-line entry here plus its import side-effect in the consumer.
-// This is intentional: the core validates eagerly rather than discovering drivers
-// from the global sql registry, which could silently accept unintended drivers.
-var supportedDrivers = map[string]bool{
-	"postgres":  true,
-	"mysql":     true,
-	"sqlserver": true,
-}
-
 // sqlOpenFn is the function used to open a database connection.
 // It is a variable to allow substitution in tests.
 var sqlOpenFn = sql.Open
 
-// Config holds the required connection parameters for the Manager.
-// Optional pool settings are configured via Option functions passed to New.
+type dbCloser interface {
+	Close() error
+}
+
+// Config holds the connection parameters for the Manager.
 type Config struct {
-	// Driver specifies the database driver: "postgres", "mysql", or "sqlserver".
-	// The consumer must register the driver via import side-effect.
+	// Driver specifies the database driver registered by a sub-package such as
+	// devkit/pkg/database/postgres, devkit/pkg/database/mysql, or
+	// devkit/pkg/database/sqlserver.
 	Driver string
 
 	// DSN is the connection string. It is never logged or included in error messages.
 	DSN string
+
+	// MaxOpenConns is the maximum number of open connections. Zero uses the default.
+	MaxOpenConns int
+
+	// MaxIdleConns is the maximum number of idle connections. Zero uses the default.
+	MaxIdleConns int
+
+	// ConnMaxLifetime is the maximum reuse duration for a connection. Zero uses the default.
+	ConnMaxLifetime time.Duration
+
+	// ConnMaxIdleTime is the maximum idle duration for a connection. Zero uses the default.
+	ConnMaxIdleTime time.Duration
 }
 
 // Option configures optional Manager settings. Use the With... functions to
@@ -93,8 +101,11 @@ func WithConnMaxIdleTime(d time.Duration) Option {
 // Manager manages a database connection pool.
 // It is safe for concurrent use; the underlying *sql.DB provides concurrency safety.
 type Manager struct {
-	db   *sql.DB
-	once sync.Once
+	db        *sql.DB
+	closer    dbCloser
+	once      sync.Once
+	closeDone chan struct{}
+	closeErr  error
 }
 
 // New creates a Manager, applies default pool settings, applies any provided
@@ -102,7 +113,12 @@ type Manager struct {
 // database to verify connectivity. Returns an error if configuration is invalid
 // or the database is unreachable.
 func New(ctx context.Context, cfg Config, opts ...Option) (*Manager, error) {
-	o := &poolOptions{}
+	o := &poolOptions{
+		maxOpenConns:    cfg.MaxOpenConns,
+		maxIdleConns:    cfg.MaxIdleConns,
+		connMaxLifetime: cfg.ConnMaxLifetime,
+		connMaxIdleTime: cfg.ConnMaxIdleTime,
+	}
 	applyDefaults(o)
 	for _, opt := range opts {
 		opt(o)
@@ -127,7 +143,11 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Manager, error) {
 		return nil, fmt.Errorf("database: ping: %w", err)
 	}
 
-	return &Manager{db: db}, nil
+	return &Manager{
+		db:        db,
+		closer:    db,
+		closeDone: make(chan struct{}),
+	}, nil
 }
 
 // DB returns the underlying *sql.DB for direct query access.
@@ -135,19 +155,26 @@ func (m *Manager) DB() *sql.DB {
 	return m.db
 }
 
-// Close closes the database connection pool idempotently.
-// The first call closes the pool; subsequent calls are no-ops returning nil.
-//
-// Note: the context parameter is accepted for API consistency but is not
-// propagated to *sql.DB.Close — the standard library does not expose a
-// context-aware close. Consumers that require a hard timeout on shutdown
-// should wrap this call with their own context cancellation logic.
-func (m *Manager) Close(_ context.Context) error {
-	var err error
+// Close closes the database connection pool idempotently and waits for either
+// completion or context cancellation.
+func (m *Manager) Close(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	m.once.Do(func() {
-		err = m.db.Close()
+		go func() {
+			m.closeErr = m.closer.Close()
+			close(m.closeDone)
+		}()
 	})
-	return err
+
+	select {
+	case <-m.closeDone:
+		return m.closeErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func applyDefaults(o *poolOptions) {
@@ -172,7 +199,7 @@ func validate(cfg Config, o poolOptions) error {
 	if cfg.DSN == "" {
 		return ErrDSNRequired
 	}
-	if !supportedDrivers[cfg.Driver] {
+	if !driverreg.IsRegistered(cfg.Driver) {
 		return fmt.Errorf("%w: %s", ErrUnsupportedDriver, cfg.Driver)
 	}
 	if o.maxOpenConns < 0 || o.maxIdleConns < 0 {

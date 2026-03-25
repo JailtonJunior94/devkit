@@ -63,33 +63,93 @@ go get devkit
 
 Gerencia connection pool para Postgres, MySQL e SQL Server. Não expõe abstrações sobre `database/sql` — o consumidor recebe o `*sql.DB` nativo e usa diretamente.
 
-O consumidor registra o driver desejado via import side-effect no `main.go`:
+### Registro de Driver
+
+Cada driver é um sub-pacote opcional. Importe via side-effect no `main.go` o driver que seu projeto usa:
 
 ```go
-import _ "github.com/lib/pq"                      // postgres
-import _ "github.com/go-sql-driver/mysql"          // mysql
-import _ "github.com/microsoft/go-mssqldb"         // sqlserver
+import _ "devkit/pkg/database/postgres"   // PostgreSQL
+import _ "devkit/pkg/database/mysql"      // MySQL / MariaDB
+import _ "devkit/pkg/database/sqlserver"  // SQL Server
 ```
+
+O registro acontece no `init()` de cada sub-pacote. A chamada a `database.New` valida se o driver foi registrado e retorna `ErrUnsupportedDriver` caso contrário.
+
+---
 
 ### Início Rápido — Database Manager
 
 ```go
-import "devkit/pkg/database"
+import (
+    "context"
+    "log"
 
-ctx := context.Background()
+    "devkit/pkg/database"
+    _ "devkit/pkg/database/postgres"
+)
+
+func main() {
+    ctx := context.Background()
+
+    mgr, err := database.New(ctx, database.Config{
+        Driver: "postgres",
+        DSN:    "postgres://user:pass@localhost:5432/mydb?sslmode=disable",
+    })
+    if err != nil {
+        log.Fatalf("database.New: %v", err)
+    }
+    defer func() { _ = mgr.Close(ctx) }()
+
+    // *sql.DB nativo disponível para queries diretas
+    rows, err := mgr.DB().QueryContext(ctx, "SELECT id, name FROM users WHERE active = $1", true)
+    if err != nil {
+        log.Fatalf("query: %v", err)
+    }
+    defer func() { _ = rows.Close() }()
+
+    for rows.Next() {
+        var id int
+        var name string
+        if err := rows.Scan(&id, &name); err != nil {
+            log.Fatalf("scan: %v", err)
+        }
+        log.Printf("user %d: %s", id, name)
+    }
+    if err := rows.Err(); err != nil {
+        log.Fatalf("rows: %v", err)
+    }
+}
+```
+
+#### MySQL
+
+```go
+import (
+    "devkit/pkg/database"
+    _ "devkit/pkg/database/mysql"
+)
 
 mgr, err := database.New(ctx, database.Config{
-    Driver: "postgres",
-    DSN:    "postgres://user:pass@localhost/mydb?sslmode=disable",
+    Driver: "mysql",
+    DSN:    "user:pass@tcp(localhost:3306)/mydb?parseTime=true",
 })
-if err != nil {
-    log.Fatalf("falha ao conectar: %v", err)
-}
-defer func() { _ = mgr.Close(ctx) }()
-
-// Acesso direto ao *sql.DB nativo
-rows, err := mgr.DB().QueryContext(ctx, "SELECT id, name FROM users")
 ```
+
+#### SQL Server
+
+```go
+import (
+    "devkit/pkg/database"
+    _ "devkit/pkg/database/sqlserver"
+)
+
+mgr, err := database.New(ctx, database.Config{
+    Driver: "sqlserver",
+    DSN:    "sqlserver://user:pass@localhost:1433?database=mydb",
+})
+```
+
+---
 
 ### Opções de Pool
 
@@ -107,19 +167,115 @@ mgr, err := database.New(ctx, database.Config{Driver: "postgres", DSN: dsn},
     database.WithMaxOpenConns(50),
     database.WithMaxIdleConns(10),
     database.WithConnMaxLifetime(10*time.Minute),
+    database.WithConnMaxIdleTime(2*time.Minute),
 )
 ```
+
+Os mesmos parâmetros podem ser informados diretamente no `Config` quando preferir evitar Options:
+
+```go
+mgr, err := database.New(ctx, database.Config{
+    Driver:          "postgres",
+    DSN:             dsn,
+    MaxOpenConns:    50,
+    MaxIdleConns:    10,
+    ConnMaxLifetime: 10 * time.Minute,
+    ConnMaxIdleTime: 2 * time.Minute,
+})
+```
+
+#### Shutdown gracioso com timeout
+
+`Close` é idempotente e respeita cancelamento de contexto:
+
+```go
+shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+if err := mgr.Close(shutCtx); err != nil {
+    log.Printf("close: %v", err)
+}
+```
+
+---
+
+### Erros Sentinela — `pkg/database`
+
+| Erro | Quando ocorre |
+| :--- | :--- |
+| `ErrDriverRequired` | `Config.Driver` está vazio |
+| `ErrDSNRequired` | `Config.DSN` está vazio |
+| `ErrUnsupportedDriver` | Driver não registrado via import side-effect |
+| `ErrInvalidPoolConfig` | `MaxIdleConns > MaxOpenConns` ou valores negativos |
+
+```go
+mgr, err := database.New(ctx, database.Config{Driver: "postgres"})
+if errors.Is(err, database.ErrDSNRequired) {
+    log.Fatal("DSN obrigatório")
+}
+
+mgr, err = database.New(ctx, database.Config{Driver: "oracle", DSN: dsn})
+if errors.Is(err, database.ErrUnsupportedDriver) {
+    log.Fatal("driver não registrado — adicione o import side-effect")
+}
+```
+
+---
 
 ### Unit of Work (`pkg/database/uow`)
 
 Coordena múltiplos repositórios em uma única transação. Commit automático em sucesso, rollback automático em erro ou panic.
 
+#### Interface `Querier`
+
+`uow.Querier` é a abstração que permite que repositórios funcionem tanto dentro quanto fora de uma transação sem alterar código:
+
 ```go
-import "devkit/pkg/database/uow"
+// Querier é satisfeito por *sql.DB e *sql.Tx.
+type Querier interface {
+    ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+    QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+    QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+    PrepareContext(ctx context.Context, query string) (*sql.Stmt, error)
+}
+```
 
-u, err := uow.New(db)
-if err != nil { ... }
+Defina seus repositórios recebendo `uow.Querier`:
 
+```go
+type UserRepository struct {
+    q uow.Querier
+}
+
+func NewUserRepository(q uow.Querier) *UserRepository {
+    return &UserRepository{q: q}
+}
+
+func (r *UserRepository) Save(ctx context.Context, name string) error {
+    _, err := r.q.ExecContext(ctx, "INSERT INTO users (name) VALUES ($1)", name)
+    return err
+}
+
+func (r *UserRepository) FindByID(ctx context.Context, id int) (string, error) {
+    var name string
+    err := r.q.QueryRowContext(ctx, "SELECT name FROM users WHERE id = $1", id).Scan(&name)
+    return name, err
+}
+```
+
+#### Uso básico
+
+```go
+import (
+    "database/sql"
+    "devkit/pkg/database/uow"
+)
+
+u, err := uow.New(mgr.DB())
+if err != nil {
+    log.Fatalf("uow.New: %v", err)
+}
+
+// Registra factory: chamada a cada transação com o *sql.Tx ativo
 u.Register("users", func(tx *sql.Tx) any {
     return NewUserRepository(tx)
 })
@@ -137,28 +293,73 @@ err = u.Do(ctx, func(ctx context.Context) error {
     // erro    → rollback automático
     // panic   → rollback + re-panic
 })
-```
-
-Repositórios implementam a interface `uow.Querier`, que é satisfeita tanto por `*sql.DB` quanto por `*sql.Tx`. Isso permite usá-los fora de transação sem alteração de código:
-
-```go
-type UserRepository struct {
-    q uow.Querier
-}
-
-func NewUserRepository(q uow.Querier) *UserRepository {
-    return &UserRepository{q: q}
+if err != nil {
+    log.Printf("transação falhou: %v", err)
 }
 ```
 
-**Opções de `uow.New`:**
-
-| Opção | Default | Descrição |
-| :--- | :--- | :--- |
-| `WithTxOptions(opts)` | nil | Nível de isolamento e modo de leitura/escrita das transações |
+#### Múltiplos repositórios em uma única transação
 
 ```go
-u, err := uow.New(db,
+type OrderRepository struct{ q uow.Querier }
+type StockRepository struct{ q uow.Querier }
+
+func (r *OrderRepository) Create(ctx context.Context, userID int, total float64) (int64, error) {
+    var id int64
+    err := r.q.QueryRowContext(ctx,
+        "INSERT INTO orders (user_id, total) VALUES ($1, $2) RETURNING id",
+        userID, total,
+    ).Scan(&id)
+    return id, err
+}
+
+func (r *StockRepository) Deduct(ctx context.Context, productID, qty int) error {
+    _, err := r.q.ExecContext(ctx,
+        "UPDATE stock SET quantity = quantity - $1 WHERE product_id = $2 AND quantity >= $1",
+        qty, productID,
+    )
+    return err
+}
+
+// Registro
+u.Register("orders", func(tx *sql.Tx) any { return &OrderRepository{q: tx} })
+u.Register("stock",  func(tx *sql.Tx) any { return &StockRepository{q: tx} })
+
+// Execução — ambos os repositórios operam no mesmo *sql.Tx
+err = u.Do(ctx, func(ctx context.Context) error {
+    orders, _ := uow.GetRepository[*OrderRepository](ctx, u, "orders")
+    stock,  _ := uow.GetRepository[*StockRepository](ctx, u, "stock")
+
+    orderID, err := orders.Create(ctx, 42, 199.90)
+    if err != nil {
+        return err // rollback automático
+    }
+    _ = orderID
+
+    return stock.Deduct(ctx, 7, 1)
+    // se Deduct falhar → rollback em ambas as operações
+})
+```
+
+#### Acesso direto ao `*sql.Tx` via contexto
+
+Quando não há repositório registrado, use `uow.TxFromContext` para obter a transação ativa:
+
+```go
+err = u.Do(ctx, func(ctx context.Context) error {
+    tx := uow.TxFromContext(ctx) // retorna nil se chamado fora de Do
+    if tx == nil {
+        return fmt.Errorf("sem transação ativa")
+    }
+    _, err := tx.ExecContext(ctx, "INSERT INTO audit_log (msg) VALUES ($1)", "operação X")
+    return err
+})
+```
+
+#### Nível de isolamento customizado
+
+```go
+u, err := uow.New(mgr.DB(),
     uow.WithTxOptions(&sql.TxOptions{
         Isolation: sql.LevelSerializable,
         ReadOnly:  false,
@@ -166,46 +367,130 @@ u, err := uow.New(db,
 )
 ```
 
+**Opções de `uow.New`:**
+
+| Opção | Default | Descrição |
+| :--- | :--- | :--- |
+| `WithTxOptions(opts)` | nil (driver default) | Nível de isolamento e modo de leitura/escrita |
+
+#### Erros sentinela — `pkg/database/uow`
+
+| Erro | Quando ocorre |
+| :--- | :--- |
+| `ErrDBRequired` | `db` nil passado a `New` |
+| `ErrRepositoryNotFound` | Nome não registrado em `GetRepository` |
+| `ErrNoActiveTransaction` | `GetRepository` ou `TxFromContext` chamados fora de `Do` |
+
+```go
+err = u.Do(ctx, func(ctx context.Context) error {
+    _, err := uow.GetRepository[*UserRepository](ctx, u, "nonexistent")
+    if errors.Is(err, uow.ErrRepositoryNotFound) {
+        return fmt.Errorf("repositório não registrado: %w", err)
+    }
+    return err
+})
+```
+
+---
+
 ### Migrations (`pkg/database/migrate`)
 
 Executa migrations Up/Down via `golang-migrate`. Recebe um `*sql.DB` existente e um `fs.FS` com os arquivos SQL — compatível com `embed.FS` para embutir as migrations no binário.
+
+#### Estrutura de arquivos
+
+```
+migrations/
+├── 000001_create_users.up.sql
+├── 000001_create_users.down.sql
+├── 000002_add_email_to_users.up.sql
+└── 000002_add_email_to_users.down.sql
+```
+
+Exemplo de conteúdo:
+
+```sql
+-- 000001_create_users.up.sql
+CREATE TABLE users (
+    id   SERIAL PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+-- 000001_create_users.down.sql
+DROP TABLE users;
+
+-- 000002_add_email_to_users.up.sql
+ALTER TABLE users ADD COLUMN email TEXT;
+
+-- 000002_add_email_to_users.down.sql
+ALTER TABLE users DROP COLUMN email;
+```
+
+#### Uso com `embed.FS`
 
 ```go
 import (
     "embed"
     "io/fs"
+    "log"
+
     "devkit/pkg/database/migrate"
 )
 
 //go:embed migrations
 var migrationsFS embed.FS
 
-sub, err := fs.Sub(migrationsFS, "migrations")
-if err != nil { ... }
+func runMigrations(db *sql.DB) {
+    sub, err := fs.Sub(migrationsFS, "migrations")
+    if err != nil {
+        log.Fatalf("fs.Sub: %v", err)
+    }
 
-m, err := migrate.New(db, sub, migrate.Config{DatabaseDriver: "postgres"})
-if err != nil { ... }
-defer func() { _ = m.Close() }()
+    m, err := migrate.New(db, sub, migrate.Config{DatabaseDriver: "postgres"})
+    if err != nil {
+        log.Fatalf("migrate.New: %v", err)
+    }
+    defer func() { _ = m.Close() }()
 
-// Aplica todas as migrations pendentes
-if err := m.Up(ctx); err != nil {
-    log.Fatalf("migration falhou: %v", err)
+    if err := m.Up(ctx); err != nil {
+        log.Fatalf("migrate up: %v", err)
+    }
+    log.Println("migrations aplicadas com sucesso")
 }
+```
 
-// Reverte todas as migrations aplicadas
+#### Rollback completo
+
+```go
 if err := m.Down(ctx); err != nil {
-    log.Fatalf("rollback de migration falhou: %v", err)
+    log.Fatalf("migrate down: %v", err)
 }
+log.Println("todas as migrations revertidas")
 ```
 
-Estrutura de arquivos de migration:
+#### Tabela de controle customizada
 
+Por padrão o `golang-migrate` usa `schema_migrations`. Para customizar:
+
+```go
+m, err := migrate.New(db, sub, migrate.Config{DatabaseDriver: "postgres"},
+    migrate.WithMigrationsTable("myapp_migrations"),
+)
 ```
-migrations/
-├── 000001_create_users.up.sql
-├── 000001_create_users.down.sql
-├── 000002_add_email.up.sql
-└── 000002_add_email.down.sql
+
+#### Tratamento de estado dirty
+
+Se o processo morrer no meio de uma migration, a tabela fica em estado "dirty". O erro `ErrDirtyDatabase` carrega a versão problemática:
+
+```go
+if err := m.Up(ctx); err != nil {
+    if errors.Is(err, migrate.ErrDirtyDatabase) {
+        log.Printf("migration em estado dirty: %v — intervenção manual necessária", err)
+        // Corrija o estado no banco e execute Force() se necessário
+        return
+    }
+    log.Fatalf("migrate up: %v", err)
+}
 ```
 
 **Opções de `migrate.New`:**
@@ -214,19 +499,94 @@ migrations/
 | :--- | :--- | :--- |
 | `WithMigrationsTable(name)` | `"schema_migrations"` | Nome da tabela de controle de versão |
 
-```go
-m, err := migrate.New(db, sub, migrate.Config{DatabaseDriver: "postgres"},
-    migrate.WithMigrationsTable("db_migrations"),
-)
-```
-
-**Erros sentinela:**
+**Erros sentinela — `pkg/database/migrate`:**
 
 | Erro | Quando ocorre |
 | :--- | :--- |
-| `ErrDatabaseRequired` | `db` nil ou `DatabaseDriver` vazio |
+| `ErrDatabaseRequired` | `db` nil ou `Config.DatabaseDriver` vazio |
 | `ErrSourceRequired` | `fsys` nil |
-| `ErrDirtyDatabase` | Migration table em estado dirty — use `Force()` na instância subjacente |
+| `ErrDirtyDatabase` | Tabela de migrations em estado dirty (inclui número da versão) |
+
+---
+
+### Stack Completa — Database + Migrate + UoW
+
+Composição típica na inicialização de uma aplicação:
+
+```go
+package main
+
+import (
+    "context"
+    "database/sql"
+    "embed"
+    "io/fs"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+
+    "devkit/pkg/database"
+    _ "devkit/pkg/database/postgres"
+    "devkit/pkg/database/migrate"
+    "devkit/pkg/database/uow"
+)
+
+//go:embed migrations
+var migrationsFS embed.FS
+
+func main() {
+    ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
+
+    // 1. Connection pool
+    mgr, err := database.New(ctx, database.Config{
+        Driver: "postgres",
+        DSN:    os.Getenv("DATABASE_URL"),
+    },
+        database.WithMaxOpenConns(50),
+        database.WithMaxIdleConns(10),
+    )
+    if err != nil {
+        log.Fatalf("database.New: %v", err)
+    }
+    defer func() { _ = mgr.Close(ctx) }()
+
+    // 2. Migrations
+    sub, _ := fs.Sub(migrationsFS, "migrations")
+    migrator, err := migrate.New(mgr.DB(), sub, migrate.Config{DatabaseDriver: "postgres"})
+    if err != nil {
+        log.Fatalf("migrate.New: %v", err)
+    }
+    defer func() { _ = migrator.Close() }()
+
+    if err := migrator.Up(ctx); err != nil {
+        log.Fatalf("migrate up: %v", err)
+    }
+
+    // 3. Unit of Work
+    unit, err := uow.New(mgr.DB())
+    if err != nil {
+        log.Fatalf("uow.New: %v", err)
+    }
+    unit.Register("users", func(tx *sql.Tx) any {
+        return NewUserRepository(tx)
+    })
+
+    // 4. Execução transacional
+    if err := unit.Do(ctx, func(ctx context.Context) error {
+        repo, err := uow.GetRepository[*UserRepository](ctx, unit, "users")
+        if err != nil {
+            return err
+        }
+        return repo.Save(ctx, "Alice")
+    }); err != nil {
+        log.Printf("transação falhou: %v", err)
+    }
+}
+```
+
+---
 
 ### Testes de Integração (Database)
 
@@ -236,8 +596,11 @@ Os testes de integração usam [testcontainers-go](https://golang.testcontainers
 # Unitários (padrão, sem Docker)
 make test
 
-# Integração (requer Docker)
+# Integração (requer Docker — Postgres e MySQL)
 make test-integration
+
+# SQL Server requer flag extra (imagem grande)
+RUN_SQLSERVER_INTEGRATION=1 make test-integration
 ```
 
 ---

@@ -5,6 +5,7 @@ package uow_test
 import (
 	"context"
 	"database/sql"
+	"os"
 	"testing"
 
 	testcontainers "github.com/testcontainers/testcontainers-go"
@@ -12,9 +13,9 @@ import (
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
-	_ "github.com/microsoft/go-mssqldb"
+	_ "devkit/pkg/database/mysql"
+	_ "devkit/pkg/database/postgres"
+	_ "devkit/pkg/database/sqlserver"
 
 	"devkit/pkg/database/uow"
 )
@@ -196,6 +197,8 @@ func insertSQL(driver string) string {
 	switch driver {
 	case "postgres":
 		return `INSERT INTO items (name) VALUES ($1)`
+	case "sqlserver":
+		return `INSERT INTO items (name) VALUES (@p1)`
 	default:
 		return `INSERT INTO items (name) VALUES (?)`
 	}
@@ -204,6 +207,8 @@ func insertSQL(driver string) string {
 func TestUOWPostgres(t *testing.T) { runUOWTests(t, setupPostgres(t)) }
 func TestUOWMySQL(t *testing.T)    { runUOWTests(t, setupMySQL(t)) }
 func TestUOWSQLServer(t *testing.T) {
-	t.Skip("SQL Server requires ~1.5GB Docker image; run manually with -run TestUOWSQLServer")
+	if os.Getenv("RUN_SQLSERVER_INTEGRATION") != "1" {
+		t.Skip("SQL Server requires ~1.5GB Docker image; set RUN_SQLSERVER_INTEGRATION=1 to run manually")
+	}
 	runUOWTests(t, setupSQLServer(t))
 }
