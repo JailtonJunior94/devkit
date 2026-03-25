@@ -2,6 +2,7 @@ package o11y
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"go.opentelemetry.io/otel/propagation"
@@ -59,18 +60,32 @@ func WithLogExporter(exp sdklog.Exporter) Option {
 	}
 }
 
-// WithW3CPropagators registers the W3C TraceContext and Baggage propagators
-// globally via otel.SetTextMapPropagator. This is the opt-in mechanism for
-// distributed trace context propagation across service boundaries (RF01/RF10).
-//
-// Without this option, trace context is not propagated via HTTP headers and
-// spans from different services will not be connected automatically.
+// WithHandler sets a custom slog.Handler. When a log exporter is configured,
+// the handler is composed with the OTel slog bridge.
+func WithHandler(handler slog.Handler) Option {
+	return func(_ context.Context, cfg *Config) error {
+		cfg.Handler = handler
+		return nil
+	}
+}
+
+// WithPropagator overrides the facade propagator without mutating global OTel state.
+func WithPropagator(prop propagation.TextMapPropagator) Option {
+	return func(_ context.Context, cfg *Config) error {
+		cfg.Propagator = prop
+		return nil
+	}
+}
+
+// WithW3CPropagators keeps the default W3C TraceContext + Baggage propagator
+// and registers it globally via otel.SetTextMapPropagator as an opt-in.
 func WithW3CPropagators() Option {
 	return func(_ context.Context, cfg *Config) error {
 		cfg.Propagator = propagation.NewCompositeTextMapPropagator(
 			propagation.TraceContext{},
 			propagation.Baggage{},
 		)
+		cfg.RegisterPropagatorGlobal = true
 		return nil
 	}
 }

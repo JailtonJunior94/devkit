@@ -1,6 +1,11 @@
 // Package o11y provides a unified bootstrap facade for OpenTelemetry
 // tracing, metrics, and logging. It composes the individual signal providers
 // without registering any global OTel state.
+//
+// Transport-specific OTLP convenience options live in sibling packages such as
+// o11y/otlpgrpc and o11y/otlphttp so the core facade stays free from gRPC,
+// HTTP, and protobuf transitive dependencies unless the caller explicitly opts
+// into those transports.
 package o11y
 
 import (
@@ -53,19 +58,23 @@ type Config struct {
 
 	// LogExporter sends log records. nil = slog.Default() fallback.
 	LogExporter sdklog.Exporter
+	// Handler is optionally composed with the OTel slog bridge.
+	Handler slog.Handler
 
-	// Propagator, when non-nil, is registered globally via otel.SetTextMapPropagator.
-	// Use WithW3CPropagators() to configure the W3C TraceContext + Baggage default.
-	// Propagation is opt-in to avoid mutating global OTel state without explicit consent (RF10).
+	// Propagator controls context injection/extraction for the facade. When nil,
+	// New uses the safe default TraceContext + Baggage composite.
 	Propagator propagation.TextMapPropagator
+	// RegisterPropagatorGlobal opts into otel.SetTextMapPropagator(cfg.Propagator).
+	RegisterPropagatorGlobal bool
 }
 
 // Observability is the assembled observability provider holding all three signals.
 type Observability struct {
-	tracer *tracing.Provider
-	meter  *metrics.Provider
-	logger *logging.Provider
-	once   sync.Once
+	tracer     *tracing.Provider
+	meter      *metrics.Provider
+	logger     *logging.Provider
+	propagator propagation.TextMapPropagator
+	once       sync.Once
 }
 
 // New creates a fully configured Observability from the given Config and options.
@@ -83,8 +92,15 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Observability, error
 		}
 	}
 
+	if cfg.Propagator == nil {
+		cfg.Propagator = propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		)
+	}
+
 	// Register propagator globally only when explicitly requested (RF10 opt-in).
-	if cfg.Propagator != nil {
+	if cfg.RegisterPropagatorGlobal {
 		otel.SetTextMapPropagator(cfg.Propagator)
 	}
 
@@ -121,6 +137,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Observability, error
 		Environment:        cfg.Environment,
 		ResourceAttributes: cfg.ResourceAttributes,
 		LogExporter:        cfg.LogExporter,
+		Handler:            cfg.Handler,
 	}
 	lp, err := logging.New(ctx, loggingCfg)
 	if err != nil {
@@ -129,9 +146,10 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Observability, error
 	}
 
 	return &Observability{
-		tracer: tp,
-		meter:  mp,
-		logger: lp,
+		tracer:     tp,
+		meter:      mp,
+		logger:     lp,
+		propagator: cfg.Propagator,
 	}, nil
 }
 
@@ -148,6 +166,11 @@ func (s *Observability) MeterProvider() metric.MeterProvider {
 // Logger returns the *slog.Logger for the service.
 func (s *Observability) Logger() *slog.Logger {
 	return s.logger.Logger()
+}
+
+// Propagator returns the facade propagator used for injection/extraction.
+func (s *Observability) Propagator() propagation.TextMapPropagator {
+	return s.propagator
 }
 
 // Shutdown shuts down all signal providers, collecting all errors.

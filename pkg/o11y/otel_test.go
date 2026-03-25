@@ -3,6 +3,7 @@ package o11y_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,11 +11,13 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 
 	"devkit/pkg/o11y"
 )
@@ -45,8 +48,8 @@ func (noopMetricExporter) Aggregation(k sdkmetric.InstrumentKind) sdkmetric.Aggr
 	return sdkmetric.DefaultAggregationSelector(k)
 }
 func (noopMetricExporter) Export(_ context.Context, _ *metricdata.ResourceMetrics) error { return nil }
-func (noopMetricExporter) ForceFlush(_ context.Context) error                             { return nil }
-func (noopMetricExporter) Shutdown(_ context.Context) error                               { return nil }
+func (noopMetricExporter) ForceFlush(_ context.Context) error                            { return nil }
+func (noopMetricExporter) Shutdown(_ context.Context) error                              { return nil }
 
 func TestNew_errorOnEmptyServiceName(t *testing.T) {
 	t.Parallel()
@@ -405,6 +408,9 @@ func TestNew_concurrentShutdown(t *testing.T) {
 
 func TestWithW3CPropagators(t *testing.T) {
 	// Not parallel: mutates the global OTel TextMapPropagator.
+	prev := otel.GetTextMapPropagator()
+	defer otel.SetTextMapPropagator(prev)
+
 	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"}, o11y.WithW3CPropagators())
 	if err != nil {
 		t.Fatalf("New() with WithW3CPropagators() error = %v", err)
@@ -416,6 +422,97 @@ func TestWithW3CPropagators(t *testing.T) {
 	if prop == nil {
 		t.Error("WithW3CPropagators() must register a non-nil global propagator")
 	}
+}
+
+func TestNew_exposesDefaultPropagatorWithoutMutatingGlobalState(t *testing.T) {
+	t.Parallel()
+
+	before := otel.GetTextMapPropagator()
+	sdk, err := o11y.New(context.Background(), o11y.Config{ServiceName: "svc"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer sdk.Shutdown(context.Background()) //nolint:errcheck
+
+	if sdk.Propagator() == nil {
+		t.Fatal("Propagator() returned nil")
+	}
+
+	carrier := propagation.MapCarrier{}
+	ctx := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    [16]byte{1},
+		SpanID:     [8]byte{2},
+		TraceFlags: trace.FlagsSampled,
+	}))
+	sdk.Propagator().Inject(ctx, carrier)
+	if carrier.Get("traceparent") == "" {
+		t.Fatal("default propagator did not inject traceparent")
+	}
+
+	after := otel.GetTextMapPropagator()
+	if before != after {
+		t.Fatal("New() must not mutate the global TextMapPropagator by default")
+	}
+}
+
+func TestNew_withCustomHandler(t *testing.T) {
+	t.Parallel()
+
+	capture := newCaptureSlogHandler()
+	sdk, err := o11y.New(context.Background(), o11y.Config{
+		ServiceName: "svc",
+		Handler:     capture,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer sdk.Shutdown(context.Background()) //nolint:errcheck
+
+	sdk.Logger().Info("facade")
+
+	if got := len(capture.records()); got != 1 {
+		t.Fatalf("custom handler saw %d records, want 1", got)
+	}
+}
+
+type captureSlogHandlerRoot struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+type captureSlogHandler struct {
+	root *captureSlogHandlerRoot
+}
+
+func newCaptureSlogHandler() *captureSlogHandler {
+	return &captureSlogHandler{root: &captureSlogHandlerRoot{}}
+}
+
+func (h *captureSlogHandler) Enabled(context.Context, slog.Level) bool {
+	return true
+}
+
+func (h *captureSlogHandler) Handle(_ context.Context, record slog.Record) error {
+	h.root.mu.Lock()
+	defer h.root.mu.Unlock()
+	h.root.records = append(h.root.records, record.Clone())
+	return nil
+}
+
+func (h *captureSlogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &captureSlogHandler{root: h.root}
+}
+
+func (h *captureSlogHandler) WithGroup(name string) slog.Handler {
+	return &captureSlogHandler{root: h.root}
+}
+
+func (h *captureSlogHandler) records() []slog.Record {
+	h.root.mu.Lock()
+	defer h.root.mu.Unlock()
+	out := make([]slog.Record, len(h.root.records))
+	copy(out, h.root.records)
+	return out
 }
 
 func BenchmarkNew_noop(b *testing.B) {

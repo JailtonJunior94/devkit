@@ -31,6 +31,10 @@ type Config struct {
 	// LogExporter is the OTel log exporter.
 	// When nil, the provider falls back to slog.Default() and no OTel pipeline is created.
 	LogExporter sdklog.Exporter
+	// Handler is an optional slog.Handler composed with the OTel bridge when
+	// LogExporter is configured. When LogExporter is nil, Handler becomes the
+	// active logger backend directly.
+	Handler slog.Handler
 }
 
 // Option configures logging bootstrap.
@@ -55,8 +59,12 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 		}
 	}
 	if cfg.LogExporter == nil {
+		logger := slog.Default()
+		if cfg.Handler != nil {
+			logger = slog.New(cfg.Handler)
+		}
 		return &Provider{
-			logger:   slog.Default(),
+			logger:   logger,
 			shutdown: func(context.Context) error { return nil },
 		}, nil
 	}
@@ -74,7 +82,10 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 		sdklog.WithProcessor(processor),
 		sdklog.WithResource(res),
 	)
-	handler := otelslog.NewHandler(cfg.ServiceName, otelslog.WithLoggerProvider(lp))
+	handler := slog.Handler(otelslog.NewHandler(cfg.ServiceName, otelslog.WithLoggerProvider(lp)))
+	if cfg.Handler != nil {
+		handler = newMultiHandler(handler, cfg.Handler)
+	}
 	logger := slog.New(handler)
 	return &Provider{
 		logger:   logger,
@@ -95,4 +106,57 @@ func (p *Provider) Shutdown(ctx context.Context) error {
 		err = p.shutdown(ctx)
 	})
 	return err
+}
+
+type multiHandler struct {
+	handlers []slog.Handler
+}
+
+func newMultiHandler(handlers ...slog.Handler) slog.Handler {
+	filtered := make([]slog.Handler, 0, len(handlers))
+	for _, handler := range handlers {
+		if handler != nil {
+			filtered = append(filtered, handler)
+		}
+	}
+	if len(filtered) == 1 {
+		return filtered[0]
+	}
+	return &multiHandler{handlers: filtered}
+}
+
+func (h *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *multiHandler) Handle(ctx context.Context, record slog.Record) error {
+	var err error
+	for _, handler := range h.handlers {
+		if !handler.Enabled(ctx, record.Level) {
+			continue
+		}
+		err = errors.Join(err, handler.Handle(ctx, record.Clone()))
+	}
+	return err
+}
+
+func (h *multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	next := make([]slog.Handler, 0, len(h.handlers))
+	for _, handler := range h.handlers {
+		next = append(next, handler.WithAttrs(attrs))
+	}
+	return &multiHandler{handlers: next}
+}
+
+func (h *multiHandler) WithGroup(name string) slog.Handler {
+	next := make([]slog.Handler, 0, len(h.handlers))
+	for _, handler := range h.handlers {
+		next = append(next, handler.WithGroup(name))
+	}
+	return &multiHandler{handlers: next}
 }

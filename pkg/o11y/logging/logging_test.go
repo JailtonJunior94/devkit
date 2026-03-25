@@ -3,6 +3,7 @@ package logging_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 
@@ -148,6 +149,57 @@ func TestLogger_traceCorrelation(t *testing.T) {
 	}
 }
 
+func TestNew_withCustomHandlerFallback(t *testing.T) {
+	t.Parallel()
+
+	capture := newCaptureHandler()
+	p, err := logging.New(context.Background(), logging.Config{
+		ServiceName: "svc",
+		Handler:     capture,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	p.Logger().Info("custom", "k", "v")
+
+	records := capture.records()
+	if len(records) != 1 {
+		t.Fatalf("expected 1 captured record, got %d", len(records))
+	}
+	if records[0].Message != "custom" {
+		t.Fatalf("record message = %q, want %q", records[0].Message, "custom")
+	}
+}
+
+func TestNew_composesCustomHandlerWithOTelBridge(t *testing.T) {
+	t.Parallel()
+
+	capture := newCaptureHandler()
+	exp := &captureLogExporter{}
+	p, err := logging.New(context.Background(), logging.Config{
+		ServiceName: "svc",
+		LogExporter: exp,
+		Handler:     capture,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	p.Logger().Info("fanout", "k", "v")
+
+	if err := p.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+
+	if got := len(capture.records()); got != 1 {
+		t.Fatalf("custom handler saw %d records, want 1", got)
+	}
+	if got := len(exp.exported()); got == 0 {
+		t.Fatal("expected OTel exporter to receive records")
+	}
+}
+
 // captureLogExporter collects sdklog.Record values for assertion in tests.
 type captureLogExporter struct {
 	mu      sync.Mutex
@@ -161,7 +213,7 @@ func (c *captureLogExporter) Export(_ context.Context, records []sdklog.Record) 
 	return nil
 }
 
-func (c *captureLogExporter) Shutdown(_ context.Context) error  { return nil }
+func (c *captureLogExporter) Shutdown(_ context.Context) error   { return nil }
 func (c *captureLogExporter) ForceFlush(_ context.Context) error { return nil }
 
 func (c *captureLogExporter) exported() []sdklog.Record {
@@ -180,4 +232,44 @@ func BenchmarkNew_noop(b *testing.B) {
 		p, _ := logging.New(context.Background(), cfg)
 		_ = p.Shutdown(context.Background())
 	}
+}
+
+type captureHandlerRoot struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+type captureHandler struct {
+	root *captureHandlerRoot
+}
+
+func newCaptureHandler() *captureHandler {
+	return &captureHandler{root: &captureHandlerRoot{}}
+}
+
+func (h *captureHandler) Enabled(context.Context, slog.Level) bool {
+	return true
+}
+
+func (h *captureHandler) Handle(_ context.Context, record slog.Record) error {
+	h.root.mu.Lock()
+	defer h.root.mu.Unlock()
+	h.root.records = append(h.root.records, record.Clone())
+	return nil
+}
+
+func (h *captureHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &captureHandler{root: h.root}
+}
+
+func (h *captureHandler) WithGroup(name string) slog.Handler {
+	return &captureHandler{root: h.root}
+}
+
+func (h *captureHandler) records() []slog.Record {
+	h.root.mu.Lock()
+	defer h.root.mu.Unlock()
+	out := make([]slog.Record, len(h.root.records))
+	copy(out, h.root.records)
+	return out
 }
