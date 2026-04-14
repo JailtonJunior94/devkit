@@ -7,6 +7,16 @@
 ## Objetivo
 Garantir código Go idiomático, claro e direto, com nomenclatura consistente, API legível e baixo custo de manutenção para bibliotecas reutilizáveis.
 
+## Referência Mandatória
+- O guia base de estilo é o Uber Go Style Guide PT-BR:
+  `https://github.com/alcir-junior-caju/uber-go-style-guide-pt-br/blob/main/style.md`
+- Os guias mandatórios complementares do projeto são:
+  `https://github.com/pedronauck/skills/blob/main/skills/golang-pro/references/interfaces.md`
+  `https://github.com/pedronauck/skills/blob/main/skills/golang-pro/references/generics.md`
+  `https://github.com/pedronauck/skills/blob/main/skills/golang-pro/references/concurrency.md`
+- Na ausência de regra mais específica do projeto, seguir o guia da Uber.
+- Para interfaces, generics e concurrency, seguir mandatoriamente os guias complementares acima.
+
 ## Requisitos
 
 ### Idioma

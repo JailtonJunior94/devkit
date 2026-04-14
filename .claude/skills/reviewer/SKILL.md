@@ -1,18 +1,9 @@
 ---
 name: reviewer
-description: |
-  Skill de review técnico e funcional. Valida arquitetura, correção, segurança,
-  manutenibilidade e conformidade funcional contra PRD/TechSpec/Tasks.
-
-  TRIGGER quando:
-  - Usuário pede review, auditoria, validação técnica ou QA
-  - Uma tarefa foi implementada e precisa de gate de aprovação
-
-  NÃO TRIGGER quando:
-  - Usuário pede apenas para corrigir bugs documentados (usar bugfix)
+description: Reviews code and functional changes against rules, requirements, and objective evidence. Use when auditing a diff, validating a task, or issuing an approval gate. Don't use for implementing fixes without a review scope.
 ---
 
-Você é um reviewer técnico senior/staff com capacidades de QA funcional.
+# Reviewer
 
 <critical>Usar `.claude/rules/` como fonte de verdade</critical>
 <critical>Não aprovar quando qualquer regra hard for violada</critical>
@@ -21,10 +12,10 @@ Você é um reviewer técnico senior/staff com capacidades de QA funcional.
 <critical>Todo veredito precisa ser reproduzível pelos comandos e artefatos citados</critical>
 
 ## Escopo
-- Analisar mudanças de código (primário: diff)
-- Identificar achados critical/major/minor com referências a regras
-- Validar risco técnico e impacto em manutenibilidade
-- Verificar conformidade funcional com PRD/TechSpec/Tasks quando fornecidos
+- Analisar mudanças de código, com foco primário no diff.
+- Identificar achados `Critical`, `Major` e `Minor` com referência explícita às regras.
+- Validar risco técnico, impacto em manutenibilidade e cobertura de testes.
+- Verificar conformidade funcional com PRD, TechSpec e Tasks quando esses artefatos existirem.
 
 ## Postura de Review
 - Assumir postura cética: procurar regressões, lacunas de contrato, inconsistências entre código/testes/docs e sinais de aprovação indevida.
@@ -33,17 +24,11 @@ Você é um reviewer técnico senior/staff com capacidades de QA funcional.
 - Preferir rebaixar o veredito a `BLOCKED` ou abrir achado quando faltar evidência determinística em vez de "aprovar pela intenção".
 - Revisar tanto comportamento nominal quanto falhas, bordas, shutdown, concorrência, observabilidade, compatibilidade e impacto arquitetural.
 
-## Política de Decisão
-- `REJECTED`: qualquer achado `Critical` não resolvido ou qualquer violação de regra `hard`.
-- `APPROVED_WITH_REMARKS`: sem `Critical`/`Major` não resolvidos, apenas itens `Minor` residuais que nao invalidam requisito.
-- `APPROVED`: sem achados não resolvidos e sem requisito atendido apenas por inferência.
-- `BLOCKED`: evidência/inputs obrigatórios ausentes, diff incompleto, impossibilidade de executar validações mínimas ou qualquer requisito sem prova objetiva suficiente para veredito determinístico.
-
-## Rubrica de Severidade
-- `Critical`: viola regra hard, quebra requisito mandatória, risco de perda de dados/corrupção/panic/security issue, regressão funcional evidente, ou comportamento incorreto em produção sem mitigação aceitável.
-- `Major`: requisito importante não comprovado, bug relevante com workaround ruim, arquitetura incompatível com PRD/TechSpec, cobertura/testes insuficientes para área crítica, ou documentação/API pública ambígua a ponto de induzir uso incorreto.
-- `Minor`: melhoria localizada, clareza/documentação/teste complementar, ou risco baixo sem impacto funcional/material imediato.
-- Na dúvida entre duas severidades, escolher a mais alta até haver evidência contrária.
+## Entrada
+- Receber o diff, branch ou escopo equivalente da revisão.
+- Receber os artefatos de requisito aplicáveis, como `tasks/`, PRD ou TechSpec, quando existirem.
+- Ler `references/decision-framework.md` antes de classificar severidade ou emitir veredito.
+- Ler `assets/report-template.md` antes de redigir o relatório final.
 
 ## Fluxo de Trabalho
 1. Ler regras relevantes e anotar quais sao `hard`.
@@ -68,9 +53,9 @@ Você é um reviewer técnico senior/staff com capacidades de QA funcional.
 - Se houver alegação de "sem dependência transitiva" ou similar: validar com comando objetivo (`go list -deps`, tamanho de binário, import graph ou equivalente).
 
 ## Persistência de Saída
-Salvar relatório no caminho indicado pelo chamador.
+- Salvar o relatório no caminho indicado pelo chamador.
 - Quando invocado no contexto de uma task (`tasks/prd-[feature-name]/`), salvar como `tasks/prd-[feature-name]/review_report.md`.
-- Padrão (sem contexto de task): `./review_report.md`.
+- Sem contexto de task, salvar em `./review_report.md`.
 
 ## Análise de Runtime e Estabilidade
 - Identificar possíveis **erros de runtime** (panic, index out of range, type assertion sem ok-check, divisão por zero).
@@ -95,35 +80,11 @@ Salvar relatório no caminho indicado pelo chamador.
 - Se evidência obrigatória estiver ausente, parar com `BLOCKED`.
 - Máximo de ciclos de remediação para re-review: padrão de governança.
 
+## Error Handling
+- Se o diff estiver incompleto ou não representar o escopo real, retornar `BLOCKED` e listar os artefatos faltantes.
+- Se `make test` ou `make lint` falharem por problema de ambiente, registrar a falha, separar o que foi verificado manualmente e manter o veredito em `BLOCKED`.
+- Se uma regra da `.claude/rules/` entrar em conflito com o requisito informado, tratar a regra como fonte de verdade e abrir achado explícito.
+- Se não houver evidência objetiva para um requisito relevante, não inferir atendimento; registrar a lacuna e degradar o veredito conforme `references/decision-framework.md`.
+
 ## Formato de Saída
-```markdown
-# Relatório de Review
-
-**Veredito**: APPROVED | APPROVED_WITH_REMARKS | REJECTED | BLOCKED
-
-Revisão executada em `YYYY-MM-DD HH:MM:SS TZ`.
-
-## Achados Técnicos
-### Critical
-- [achado + ref de regra]
-
-### Major
-- [achado + ref de regra]
-
-### Minor
-- [achado]
-
-## Verificação Funcional
-- Requisitos verificados: X/Y
-- Bugs encontrados: Z
-- [evidência objetiva por requisito quando aplicável]
-
-## Validações Executadas
-- `comando` -> resultado
-
-## Premissas e Evidências Ausentes
-- [se aplicável]
-
-## Riscos Residuais
-- [risco]
-```
+- Usar a estrutura de `assets/report-template.md`.

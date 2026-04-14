@@ -1,37 +1,31 @@
 ---
 name: bugfix
-description: |
-  Skill de correção de bugs focada em fixes de causa raiz e testes de regressão.
-
-  TRIGGER quando:
-  - Usuário pede para corrigir bugs ou referencia bugs.md
-
-  NÃO TRIGGER quando:
-  - Usuário pede apenas review/auditoria (usar reviewer)
-  - Usuário pede apenas refatoração (usar refactor)
+description: Executes root-cause bug fixes with regression tests and validation evidence. Use when fixing documented defects or reviewer findings. Don't use for code review-only tasks or refactor-only requests.
 ---
 
-Você é um especialista em corrigir bugs pela causa raiz.
+# Bugfix
 
 <critical>Todo bug corrigido deve ter um teste de regressão</critical>
 <critical>Não finalizar com bugs pendentes no escopo acordado</critical>
 
 ## Entrada
-- Lista de bugs usando formato canônico: `{ id, severity, file, line, reproduction, expected, actual }`
-  (compatível com saída da skill reviewer)
-- Escopo de bugs a corrigir aprovado pelo usuário
+- Receber uma lista de bugs no formato canônico `{ id, severity, file, line, reproduction, expected, actual }`.
+- Receber o escopo aprovado dos bugs a corrigir.
+- Ler `assets/report-template.md` antes de redigir o relatório final.
 
 ## Fluxo de Trabalho
-1. Ler e priorizar bugs por severidade.
-2. Para cada bug: análise de causa raiz -> correção -> teste de regressão.
-3. Executar validações (`make test`, `make lint`) quando disponíveis.
-4. Atualizar status do bug com evidência de correção.
-5. Se informação obrigatória estiver ausente, parar com `needs_input`.
+1. Ler e priorizar os bugs por severidade, impacto e facilidade de reprodução.
+2. Confirmar a reprodução ou reunir evidência objetiva suficiente para localizar a causa raiz.
+3. Corrigir um bug por vez para evitar misturar evidências e regressões.
+4. Adicionar ou ajustar um teste de regressão para cada bug corrigido.
+5. Executar validações relevantes, priorizando `make test` e `make lint` quando disponíveis.
+6. Registrar para cada item a causa raiz, a correção aplicada, os testes executados e a evidência de validação.
+7. Parar com `needs_input` se dados obrigatórios de reprodução, escopo ou ambiente estiverem ausentes.
 
 ## Persistência de Saída
-Salvar relatório no caminho indicado pelo chamador.
+- Salvar o relatório no caminho indicado pelo chamador.
 - Quando invocado no contexto de uma task (`tasks/prd-[feature-name]/`), salvar como `tasks/prd-[feature-name]/bugfix_report.md`.
-- Padrão (sem contexto de task): `./bugfix_report.md`.
+- Sem contexto de task, salvar em `./bugfix_report.md`.
 
 ## Condições de Parada
 - `done`: escopo acordado corrigido e validado.
@@ -39,11 +33,11 @@ Salvar relatório no caminho indicado pelo chamador.
 - `needs_input`: dados obrigatórios de reprodução/escopo ausentes.
 - `failed`: limite de remediação excedido (ver padrão de governança).
 
+## Error Handling
+- Se o bug não puder ser reproduzido, registrar a lacuna de evidência, listar os passos tentados e retornar `blocked` ou `needs_input`.
+- Se a correção proposta introduzir regressão, reverter a abordagem localmente, documentar o risco e tentar uma alternativa menor.
+- Se `make test` ou `make lint` não existirem, executar a validação automatizada equivalente disponível e registrar o comando usado.
+- Se houver múltiplos bugs com a mesma causa raiz, consolidar a explicação, mas manter teste e status por bug.
+
 ## Formato de Saída
-```markdown
-# Relatório de Bugfix
-- Total de bugs no escopo: X
-- Corrigidos: Y
-- Testes de regressão adicionados: Z
-- Pendentes: [lista]
-```
+- Usar a estrutura de `assets/report-template.md`.

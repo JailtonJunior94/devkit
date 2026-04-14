@@ -1,17 +1,9 @@
 ---
 name: semantic-commit
-description: |
-  Gerar mensagem de Conventional Commit a partir de git diff. Opcionalmente gerar um resumo conciso de PR.
-
-  TRIGGER quando:
-  - Usuário pede mensagem de commit semântico/convencional
-  - Usuário pede sugestão de commit a partir de diff
-
-  NÃO TRIGGER quando:
-  - Usuário pede execução de bugfix/qa/review
+description: Generates Conventional Commit messages from a git diff and can propose commit splitting or a short PR summary. Use when deriving a semantic commit from staged or unstaged changes. Don't use for bugfix, refactor, or review execution.
 ---
 
-Você é um especialista em compor mensagens de commit semânticas.
+# Semantic Commit
 
 <critical>Inferir tipo de commit a partir de evidência do diff</critical>
 <critical>Usar formato Conventional Commit</critical>
@@ -21,6 +13,10 @@ Você é um especialista em compor mensagens de commit semânticas.
 
 ## Tipos Permitidos
 `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `build`, `ci`, `style`
+
+## Entrada
+- Receber um diff legível, staged ou unstaged.
+- Ler `assets/output-template.md` antes de montar a resposta final.
 
 ## Fluxo de Trabalho
 1. Analisar diff e agrupar mudanças por intenção.
@@ -37,15 +33,11 @@ Você é um especialista em compor mensagens de commit semânticas.
 - `done`: commit semântico (e opcionalmente divisão/resumo) gerado a partir do diff.
 - `needs_input`: diff ausente ou ilegível.
 
+## Error Handling
+- Se o diff contiver mudanças sem relação clara entre si, não forçar um único commit; sugerir divisão obrigatória.
+- Se o escopo não puder ser inferido com segurança, omitir o `scope` em vez de inventá-lo.
+- Se houver apenas mudanças mecânicas de formatação, priorizar `style` ou `chore` conforme a evidência do diff.
+- Se o diff estiver ausente, truncado ou ilegível, retornar `needs_input`.
+
 ## Formato de Saída
-```
-Commit:
-<commit semântico>
-
-Divisão opcional:
-- <commit 1>
-- <commit 2>
-
-Resumo de PR opcional:
-- [resumo curto]
-```
+- Usar a estrutura de `assets/output-template.md`.
