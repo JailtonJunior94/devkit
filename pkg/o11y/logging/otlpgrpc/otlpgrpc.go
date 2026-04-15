@@ -11,7 +11,6 @@ import (
 )
 
 // WithOTLPGRPC creates an OTLP gRPC log exporter for the logging module.
-// The optional endpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4317.
 func WithOTLPGRPC(endpoint ...string) logging.Option {
 	return func(ctx context.Context, cfg *logging.Config) error {
 		var opts []otlploggrpc.Option

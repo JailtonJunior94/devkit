@@ -7,32 +7,21 @@ import (
 )
 
 // FakeLogger provides an in-memory slog handler for test log inspection.
-// All records are collected in memory regardless of level.
 type FakeLogger struct {
 	root   *fakeLogRoot
 	logger *slog.Logger
 }
 
-// fakeLogRoot holds the shared mutable state for all handler branches.
 type fakeLogRoot struct {
 	mu      sync.Mutex
 	records []slog.Record
 }
 
-// fakeHandler is the slog.Handler implementation that writes to fakeLogRoot.
-//
-// topAttrs holds attributes accumulated before the current groupPrefix was
-// established (via WithGroup). They are rendered at the outermost scope of
-// every record, matching the stdlib slog contract where pre-group attributes
-// are not nested inside the group.
-//
-// attrs holds attributes accumulated after the current groupPrefix was set.
-// They are rendered inside the group when groupPrefix is non-empty.
 type fakeHandler struct {
 	root        *fakeLogRoot
-	topAttrs    []slog.Attr // attrs from before the current group; always outer-scope
-	attrs       []slog.Attr // attrs at the current group level
-	groupPrefix string      // non-empty when inside a WithGroup call
+	topAttrs    []slog.Attr
+	attrs       []slog.Attr
+	groupPrefix string
 }
 
 func (h *fakeHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
@@ -42,14 +31,11 @@ func (h *fakeHandler) Handle(_ context.Context, r slog.Record) error {
 	defer h.root.mu.Unlock()
 
 	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
-
-	// topAttrs are always rendered at the outer scope, independent of groupPrefix.
 	if len(h.topAttrs) > 0 {
 		out.AddAttrs(h.topAttrs...)
 	}
 
 	if h.groupPrefix == "" {
-		// No active group: stored attrs and record attrs are at the top level.
 		if len(h.attrs) > 0 {
 			out.AddAttrs(h.attrs...)
 		}
@@ -58,9 +44,7 @@ func (h *fakeHandler) Handle(_ context.Context, r slog.Record) error {
 			return true
 		})
 	} else {
-		// Active group: combine in-group stored attrs with record attrs under the group prefix.
-		var grouped []slog.Attr
-		grouped = append(grouped, h.attrs...)
+		grouped := append([]slog.Attr(nil), h.attrs...)
 		r.Attrs(func(a slog.Attr) bool {
 			grouped = append(grouped, a)
 			return true
@@ -81,15 +65,10 @@ func (h *fakeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &fakeHandler{root: h.root, topAttrs: h.topAttrs, attrs: merged, groupPrefix: h.groupPrefix}
 }
 
-// WithGroup returns a handler that scopes all future attributes under name.
-// Attributes already accumulated via WithAttrs are promoted to topAttrs so they
-// continue to appear at the outer scope in every record, matching the slog.Handler
-// contract: pre-group attributes must not be nested inside the new group.
 func (h *fakeHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
 	}
-	// Existing attrs (topAttrs + attrs) become the outer-scope attrs for the new handler.
 	newTop := make([]slog.Attr, len(h.topAttrs)+len(h.attrs))
 	copy(newTop, h.topAttrs)
 	copy(newTop[len(h.topAttrs):], h.attrs)
@@ -101,7 +80,6 @@ func (h *fakeHandler) WithGroup(name string) slog.Handler {
 	return &fakeHandler{root: h.root, topAttrs: newTop, groupPrefix: prefix}
 }
 
-// attrsToAny converts []slog.Attr to []any for use with slog.Group.
 func attrsToAny(attrs []slog.Attr) []any {
 	result := make([]any, len(attrs))
 	for i, a := range attrs {
@@ -120,7 +98,7 @@ func NewFakeLogger() *FakeLogger {
 	}
 }
 
-// Logger returns the *slog.Logger that writes to memory.
+// Logger returns the slog logger that writes to memory.
 func (f *FakeLogger) Logger() *slog.Logger {
 	return f.logger
 }

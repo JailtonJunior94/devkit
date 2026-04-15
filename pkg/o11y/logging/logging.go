@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 
@@ -18,6 +19,9 @@ import (
 // ErrServiceNameRequired is returned when ServiceName is empty.
 var ErrServiceNameRequired = errors.New("logging: service name is required")
 
+// ErrNilOption is returned when a nil Option is passed to New.
+var ErrNilOption = errors.New("logging: option cannot be nil")
+
 // Config holds logging-specific configuration.
 type Config struct {
 	// ServiceName is the logical name of the service. Required.
@@ -29,7 +33,7 @@ type Config struct {
 	// ResourceAttributes are additional OTel resource attributes merged into the resource. Optional.
 	ResourceAttributes []attribute.KeyValue
 	// LogExporter is the OTel log exporter.
-	// When nil, the provider falls back to slog.Default() and no OTel pipeline is created.
+	// When nil, the provider uses an isolated discard-backed logger and no OTel pipeline is created.
 	LogExporter sdklog.Exporter
 	// Handler is an optional slog.Handler composed with the OTel bridge when
 	// LogExporter is configured. When LogExporter is nil, Handler becomes the
@@ -47,19 +51,21 @@ type Provider struct {
 	once     sync.Once
 }
 
-// New creates a configured logging Provider.
-// When no LogExporter is configured, it falls back to slog.Default().
+// New creates a configured logging provider.
 func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	if cfg.ServiceName == "" {
 		return nil, ErrServiceNameRequired
 	}
 	for _, opt := range opts {
+		if opt == nil {
+			return nil, ErrNilOption
+		}
 		if err := opt(ctx, &cfg); err != nil {
 			return nil, fmt.Errorf("logging: applying option: %w", err)
 		}
 	}
 	if cfg.LogExporter == nil {
-		logger := slog.Default()
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		if cfg.Handler != nil {
 			logger = slog.New(cfg.Handler)
 		}
@@ -68,6 +74,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 			shutdown: func(context.Context) error { return nil },
 		}, nil
 	}
+
 	res, err := resource.Build(resource.Config{
 		ServiceName:    cfg.ServiceName,
 		ServiceVersion: cfg.ServiceVersion,
@@ -77,6 +84,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("logging: building resource: %w", err)
 	}
+
 	processor := sdklog.NewBatchProcessor(cfg.LogExporter)
 	lp := sdklog.NewLoggerProvider(
 		sdklog.WithProcessor(processor),
@@ -86,20 +94,18 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	if cfg.Handler != nil {
 		handler = newMultiHandler(handler, cfg.Handler)
 	}
-	logger := slog.New(handler)
 	return &Provider{
-		logger:   logger,
+		logger:   slog.New(handler),
 		shutdown: lp.Shutdown,
 	}, nil
 }
 
-// Logger returns the *slog.Logger for the service.
+// Logger returns the slog logger for the service.
 func (p *Provider) Logger() *slog.Logger {
 	return p.logger
 }
 
-// Shutdown flushes pending log records and releases resources. It is idempotent;
-// subsequent calls return nil.
+// Shutdown flushes pending log records and releases resources.
 func (p *Provider) Shutdown(ctx context.Context) error {
 	var err error
 	p.once.Do(func() {

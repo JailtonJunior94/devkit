@@ -11,7 +11,6 @@ import (
 )
 
 // WithOTLPGRPC creates an OTLP gRPC span exporter for the tracing module.
-// The optional endpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4317.
 func WithOTLPGRPC(endpoint ...string) tracing.Option {
 	return func(ctx context.Context, cfg *tracing.Config) error {
 		var opts []otlptracegrpc.Option

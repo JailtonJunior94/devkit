@@ -11,7 +11,6 @@ import (
 )
 
 // FakeTracer provides an in-memory TracerProvider for test span inspection.
-// Spans are exported synchronously and available immediately after span.End().
 type FakeTracer struct {
 	exporter *tracetest.InMemoryExporter
 	provider *sdktrace.TracerProvider
@@ -19,15 +18,13 @@ type FakeTracer struct {
 }
 
 // NewFakeTracer creates a FakeTracer backed by an in-memory exporter.
-// Spans are available immediately after span.End() via Spans().
 func NewFakeTracer() *FakeTracer {
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp))
 	return &FakeTracer{exporter: exp, provider: tp}
 }
 
-// TracerProvider returns the underlying trace.TracerProvider.
-// Use this for drop-in replacement of any trace.TracerProvider reference.
+// TracerProvider returns the underlying tracer provider.
 func (f *FakeTracer) TracerProvider() trace.TracerProvider {
 	return f.provider
 }
@@ -47,8 +44,7 @@ func (f *FakeTracer) Reset() {
 	f.exporter.Reset()
 }
 
-// Shutdown shuts down the underlying TracerProvider, releasing resources.
-// Idempotent: subsequent calls are no-ops and return nil.
+// Shutdown shuts down the underlying TracerProvider.
 func (f *FakeTracer) Shutdown(ctx context.Context) error {
 	var err error
 	f.once.Do(func() {

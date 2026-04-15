@@ -7,7 +7,7 @@ import (
 	"devkit/pkg/o11y/logging"
 )
 
-func TestWithOTLPHTTP_setsLogExporter(t *testing.T) {
+func TestWithOTLPHTTPSetsLogExporter(t *testing.T) {
 	t.Parallel()
 
 	cfg := logging.Config{ServiceName: "svc"}

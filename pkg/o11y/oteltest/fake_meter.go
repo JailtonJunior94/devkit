@@ -10,7 +10,6 @@ import (
 )
 
 // FakeMeter provides an in-memory MeterProvider for test metric inspection.
-// Use Collect to retrieve recorded measurements.
 type FakeMeter struct {
 	reader   *sdkmetric.ManualReader
 	provider *sdkmetric.MeterProvider
@@ -24,7 +23,7 @@ func NewFakeMeter() *FakeMeter {
 	return &FakeMeter{reader: reader, provider: mp}
 }
 
-// MeterProvider returns the underlying metric.MeterProvider.
+// MeterProvider returns the underlying metric provider.
 func (f *FakeMeter) MeterProvider() metric.MeterProvider {
 	return f.provider
 }
@@ -36,8 +35,7 @@ func (f *FakeMeter) Collect(ctx context.Context) (metricdata.ResourceMetrics, er
 	return rm, err
 }
 
-// Shutdown shuts down the underlying MeterProvider, releasing resources.
-// Idempotent: subsequent calls are no-ops and return nil.
+// Shutdown shuts down the underlying MeterProvider.
 func (f *FakeMeter) Shutdown(ctx context.Context) error {
 	var err error
 	f.once.Do(func() {

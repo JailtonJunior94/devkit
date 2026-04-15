@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestPackageDeps_doNotIncludeOTLPTransports(t *testing.T) {
+func TestPackageDepsDoNotIncludeOTLPTransports(t *testing.T) {
 	t.Parallel()
 
 	cmd := exec.Command("go", "list", "-deps", "devkit/pkg/o11y/logging")

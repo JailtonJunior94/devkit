@@ -11,7 +11,6 @@ import (
 )
 
 // WithOTLPGRPC creates an OTLP gRPC metric exporter for the metrics module.
-// The optional endpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4317.
 func WithOTLPGRPC(endpoint ...string) metrics.Option {
 	return func(ctx context.Context, cfg *metrics.Config) error {
 		var opts []otlpmetricgrpc.Option

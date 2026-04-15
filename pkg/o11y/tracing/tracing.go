@@ -18,21 +18,17 @@ import (
 // ErrServiceNameRequired is returned when ServiceName is empty.
 var ErrServiceNameRequired = errors.New("tracing: service name is required")
 
+// ErrNilOption is returned when a nil Option is passed to New.
+var ErrNilOption = errors.New("tracing: option cannot be nil")
+
 // Config holds tracing-specific configuration.
 type Config struct {
-	// ServiceName is the logical name of the service. Required.
-	ServiceName string
-	// ServiceVersion is the version string of the service (e.g. "1.2.3"). Optional.
-	ServiceVersion string
-	// Environment identifies the deployment environment (e.g. "prod", "staging"). Optional.
-	Environment string
-	// ResourceAttributes are additional OTel resource attributes merged into the resource. Optional.
+	ServiceName        string
+	ServiceVersion     string
+	Environment        string
 	ResourceAttributes []attribute.KeyValue
-	// SpanExporter is the exporter for completed spans.
-	// When nil, a no-op TracerProvider is used and all spans are discarded.
-	SpanExporter sdktrace.SpanExporter
-	// Sampler overrides the default sampler (ParentBased(AlwaysSample)). Optional.
-	Sampler sdktrace.Sampler
+	SpanExporter       sdktrace.SpanExporter
+	Sampler            sdktrace.Sampler
 }
 
 // Option configures tracing bootstrap.
@@ -46,13 +42,14 @@ type Provider struct {
 }
 
 // New creates a configured TracerProvider.
-// When no SpanExporter is configured (either via cfg or opts), it returns a
-// no-op provider that discards all spans.
 func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	if cfg.ServiceName == "" {
 		return nil, ErrServiceNameRequired
 	}
 	for _, opt := range opts {
+		if opt == nil {
+			return nil, ErrNilOption
+		}
 		if err := opt(ctx, &cfg); err != nil {
 			return nil, fmt.Errorf("tracing: applying option: %w", err)
 		}
@@ -63,6 +60,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 			shutdown: func(context.Context) error { return nil },
 		}, nil
 	}
+
 	res, err := resource.Build(resource.Config{
 		ServiceName:    cfg.ServiceName,
 		ServiceVersion: cfg.ServiceVersion,
@@ -72,10 +70,12 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tracing: building resource: %w", err)
 	}
+
 	sampler := cfg.Sampler
 	if sampler == nil {
 		sampler = sdktrace.ParentBased(sdktrace.AlwaysSample())
 	}
+
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(cfg.SpanExporter),
 		sdktrace.WithResource(res),
@@ -87,13 +87,12 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	}, nil
 }
 
-// TracerProvider returns the underlying trace.TracerProvider.
+// TracerProvider returns the underlying tracer provider.
 func (p *Provider) TracerProvider() trace.TracerProvider {
 	return p.provider
 }
 
-// Shutdown flushes pending spans and releases resources. It is idempotent;
-// subsequent calls return nil.
+// Shutdown flushes pending spans and releases resources.
 func (p *Provider) Shutdown(ctx context.Context) error {
 	var err error
 	p.once.Do(func() {

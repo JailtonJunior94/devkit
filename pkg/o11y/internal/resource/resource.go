@@ -15,8 +15,7 @@ type Config struct {
 	Attributes     []attribute.KeyValue
 }
 
-// Build creates a *resource.Resource merging service identity with
-// default runtime attributes. Returns error if merge fails.
+// Build creates a Resource by merging service identity attributes with the default resource.
 func Build(cfg Config) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{
 		semconv.ServiceName(cfg.ServiceName),

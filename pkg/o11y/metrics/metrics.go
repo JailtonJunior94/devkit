@@ -19,21 +19,17 @@ import (
 // ErrServiceNameRequired is returned when ServiceName is empty.
 var ErrServiceNameRequired = errors.New("metrics: service name is required")
 
+// ErrNilOption is returned when a nil Option is passed to New.
+var ErrNilOption = errors.New("metrics: option cannot be nil")
+
 // Config holds metrics-specific configuration.
 type Config struct {
-	// ServiceName is the logical name of the service. Required.
-	ServiceName string
-	// ServiceVersion is the version string of the service (e.g. "1.2.3"). Optional.
-	ServiceVersion string
-	// Environment identifies the deployment environment (e.g. "prod", "staging"). Optional.
-	Environment string
-	// ResourceAttributes are additional OTel resource attributes merged into the resource. Optional.
+	ServiceName        string
+	ServiceVersion     string
+	Environment        string
 	ResourceAttributes []attribute.KeyValue
-	// Exporter is the metric exporter for the periodic reader.
-	// When nil, a no-op MeterProvider is used and all measurements are discarded.
-	Exporter sdkmetric.Exporter
-	// Interval controls how often metrics are exported. Zero or negative uses the SDK default (60 s).
-	Interval time.Duration
+	Exporter           sdkmetric.Exporter
+	Interval           time.Duration
 }
 
 // Option configures metrics bootstrap.
@@ -47,13 +43,14 @@ type Provider struct {
 }
 
 // New creates a configured MeterProvider.
-// When no Exporter is configured (either via cfg or opts), it returns a
-// no-op provider that discards all measurements.
 func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	if cfg.ServiceName == "" {
 		return nil, ErrServiceNameRequired
 	}
 	for _, opt := range opts {
+		if opt == nil {
+			return nil, ErrNilOption
+		}
 		if err := opt(ctx, &cfg); err != nil {
 			return nil, fmt.Errorf("metrics: applying option: %w", err)
 		}
@@ -64,6 +61,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 			shutdown: func(context.Context) error { return nil },
 		}, nil
 	}
+
 	res, err := resource.Build(resource.Config{
 		ServiceName:    cfg.ServiceName,
 		ServiceVersion: cfg.ServiceVersion,
@@ -73,6 +71,7 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("metrics: building resource: %w", err)
 	}
+
 	var readerOpts []sdkmetric.PeriodicReaderOption
 	if cfg.Interval > 0 {
 		readerOpts = append(readerOpts, sdkmetric.WithInterval(cfg.Interval))
@@ -88,13 +87,12 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 	}, nil
 }
 
-// MeterProvider returns the underlying metric.MeterProvider.
+// MeterProvider returns the underlying metric provider.
 func (p *Provider) MeterProvider() metric.MeterProvider {
 	return p.provider
 }
 
-// Shutdown flushes pending metrics and releases resources. It is idempotent;
-// subsequent calls return nil.
+// Shutdown flushes pending metrics and releases resources.
 func (p *Provider) Shutdown(ctx context.Context) error {
 	var err error
 	p.once.Do(func() {

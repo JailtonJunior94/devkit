@@ -7,7 +7,7 @@ import (
 	"devkit/pkg/o11y/metrics"
 )
 
-func TestWithOTLPGRPC_setsMetricExporter(t *testing.T) {
+func TestWithOTLPGRPCSetsMetricExporter(t *testing.T) {
 	t.Parallel()
 
 	cfg := metrics.Config{ServiceName: "svc"}

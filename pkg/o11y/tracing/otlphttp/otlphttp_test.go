@@ -7,7 +7,7 @@ import (
 	"devkit/pkg/o11y/tracing"
 )
 
-func TestWithOTLPHTTP_setsSpanExporter(t *testing.T) {
+func TestWithOTLPHTTPSetsSpanExporter(t *testing.T) {
 	t.Parallel()
 
 	cfg := tracing.Config{ServiceName: "svc"}

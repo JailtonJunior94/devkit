@@ -11,7 +11,6 @@ import (
 )
 
 // WithOTLPHTTP creates an OTLP HTTP span exporter for the tracing module.
-// The optional endpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4318.
 func WithOTLPHTTP(endpoint ...string) tracing.Option {
 	return func(ctx context.Context, cfg *tracing.Config) error {
 		var opts []otlptracehttp.Option

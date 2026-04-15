@@ -11,7 +11,6 @@ import (
 )
 
 // WithOTLPHTTP creates an OTLP HTTP metric exporter for the metrics module.
-// The optional endpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT or localhost:4318.
 func WithOTLPHTTP(endpoint ...string) metrics.Option {
 	return func(ctx context.Context, cfg *metrics.Config) error {
 		var opts []otlpmetrichttp.Option

@@ -1,6 +1,7 @@
 package logging_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
@@ -30,6 +31,15 @@ func TestNew_errorOnEmptyServiceName(t *testing.T) {
 	}
 }
 
+func TestNew_errorOnNilOption(t *testing.T) {
+	t.Parallel()
+
+	_, err := logging.New(context.Background(), logging.Config{ServiceName: "svc"}, nil)
+	if !errors.Is(err, logging.ErrNilOption) {
+		t.Fatalf("New() error = %v, want ErrNilOption", err)
+	}
+}
+
 func TestNew_fallbackWhenNoExporter(t *testing.T) {
 	t.Parallel()
 
@@ -42,6 +52,28 @@ func TestNew_fallbackWhenNoExporter(t *testing.T) {
 	}
 	if p.Logger() == nil {
 		t.Fatal("Logger() returned nil")
+	}
+}
+
+func TestNew_fallbackLoggerDoesNotUseGlobalDefault(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	original := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(original)
+	})
+
+	p, err := logging.New(context.Background(), logging.Config{ServiceName: "svc"})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	p.Logger().Info("hello")
+
+	if buf.Len() != 0 {
+		t.Fatalf("expected fallback logger to ignore global default, got output %q", buf.String())
 	}
 }
 
@@ -108,7 +140,7 @@ func TestLogger_isUsable(t *testing.T) {
 	defer p.Shutdown(context.Background()) //nolint:errcheck
 
 	logger := p.Logger()
-	// Log without panicking — basic usability check.
+	// Log without panicking: basic usability check.
 	logger.Info("test log", "key", "value")
 }
 

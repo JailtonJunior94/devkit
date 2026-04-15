@@ -5,9 +5,7 @@ import (
 	"log/slog"
 )
 
-// WithHandler configures a custom slog.Handler for the logger. When a log
-// exporter is configured, the handler is composed with the OTel bridge so the
-// record is written to both backends.
+// WithHandler configures a custom slog handler for the logger.
 func WithHandler(handler slog.Handler) Option {
 	return func(_ context.Context, cfg *Config) error {
 		cfg.Handler = handler

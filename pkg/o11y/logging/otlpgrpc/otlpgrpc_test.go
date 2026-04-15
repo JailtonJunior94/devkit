@@ -7,7 +7,7 @@ import (
 	"devkit/pkg/o11y/logging"
 )
 
-func TestWithOTLPGRPC_setsLogExporter(t *testing.T) {
+func TestWithOTLPGRPCSetsLogExporter(t *testing.T) {
 	t.Parallel()
 
 	cfg := logging.Config{ServiceName: "svc"}

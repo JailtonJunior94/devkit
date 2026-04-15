@@ -1,46 +1,48 @@
-package noop_test
+package noop
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"devkit/pkg/o11y/noop"
+	observability "devkit/pkg/o11y"
 )
 
-func TestNewTracerProvider(t *testing.T) {
+func TestNoopTracerStartInjectsSpanIntoContext(t *testing.T) {
 	t.Parallel()
 
-	tp := noop.NewTracerProvider()
-	if tp == nil {
-		t.Fatal("NewTracerProvider() returned nil")
-	}
+	tracer := &noopTracer{}
 
-	_, span := tp.Tracer("test").Start(context.Background(), "op")
-	span.End()
+	ctx, span := tracer.Start(nilContext(), "operation")
+	fromContext := tracer.SpanFromContext(ctx)
+
+	if fromContext != span {
+		t.Fatalf("expected span from context to match started span")
+	}
 }
 
-func TestNewMeterProvider(t *testing.T) {
+func TestNoopTracerContextWithSpanInjectsSpan(t *testing.T) {
 	t.Parallel()
 
-	mp := noop.NewMeterProvider()
-	if mp == nil {
-		t.Fatal("NewMeterProvider() returned nil")
-	}
+	tracer := &noopTracer{}
+	span := noopSpan{}
 
-	counter, err := mp.Meter("test").Int64Counter("ops")
-	if err != nil {
-		t.Fatalf("Int64Counter() error = %v", err)
+	ctx := tracer.ContextWithSpan(nilContext(), span)
+	if got := tracer.SpanFromContext(ctx); got != span {
+		t.Fatalf("expected context to return injected span")
 	}
-	counter.Add(context.Background(), 1)
 }
 
-func TestNewLogger(t *testing.T) {
+func TestNoopMetricsGaugeRejectsNilCallback(t *testing.T) {
 	t.Parallel()
 
-	logger := noop.NewLogger()
-	if logger == nil {
-		t.Fatal("NewLogger() returned nil")
+	metrics := &noopMetrics{}
+	err := metrics.Gauge("queue_depth", "queue depth", "1", nil)
+	if !errors.Is(err, observability.ErrNilGaugeCallback) {
+		t.Fatalf("Gauge() error = %v, want ErrNilGaugeCallback", err)
 	}
+}
 
-	logger.Info("discarded")
+func nilContext() context.Context {
+	return nil
 }
